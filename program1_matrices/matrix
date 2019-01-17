@@ -1,0 +1,111 @@
+#!/bin/bash
+#
+# matrix
+#
+# Phi Luu
+#
+# Oregon State University
+# CS 344_001_W2019 Operating Systems 1
+# Program 1: Matrices
+
+# Validates a matrix by making sure all rows have the same number of elements
+# and all elements are integers.
+#
+# SYNOPSIS
+#   is_valid_matrix matrix
+#
+# ARGUMENTS
+#   matrix - a string of EOL-separated rows (to be validated)
+#
+# RETURNS
+#   0 - if the  matrix  argument is a valid matrix
+#   1 - otherwise
+is_int_matrix() {
+  # ensure there is a non-empty string to check
+  if [[ "$#" -ne 1 || -z "$1" ]]; then
+    return 1
+  fi
+
+  # get the number of columns in the first row
+  read first_row < "$1"
+  local first_row_arr
+  local num_cols_first_row
+  first_row_arr=(${first_row})
+  num_cols_first_row="${#first_row_arr[@]}"
+
+  while read row; do
+    local row_arr
+    local num_cols_row
+
+    # ensure the current row has the same number of elements as the first one
+    row_arr=(${row})
+    num_cols_row="${#row_arr[@]}"
+    if [[ ${num_cols_row} -ne ${num_cols_first_row} ]]; then
+      return 1
+    fi
+
+    # TODO: Check for float and non-numerics (allow integers only). RegEx?
+  done < "$1"
+}
+
+# Prints the dimensions of the matrix as the number of rows, followed by a
+# space, then the number of columns.
+#
+# SYNOPSIS
+#   dims [matrix]
+#
+# ARGUMENTS
+#   matrix - a string of EOL-separated rows, each contains an equal number of
+# tab-separated integers.
+#   If no arguments were provided, prompts the user to enter the matrix
+#
+# RETURNS
+#   None
+dims() {
+  # ensure there is at most 1 argument
+  if [[ "$#" -gt 1 ]]; then
+    echo -e "Usage: ./matrix dims [matrix]\n" >&2
+    return 1
+  
+  # if using file
+  if [[ "$#" -eq 1 ]]; then
+    # ensure the file exists
+    if [ ! -f "$1" ]; then
+      echo -e "Could not read file\n" >&2
+      return 1
+    fi
+    # ensure the matrix is valid
+    if [ ! is_int_matrix "$1" ]; then
+      echo -e "Could not read matrix\n" >&2
+      return 1
+    fi
+  fi
+
+  local num_rows
+  local num_cols
+  num_rows=0
+  num_cols=0
+
+  # count the number of rows
+  while read row; do
+    ((num_rows++))
+  done < "$1"
+
+  # read only the first row of the matrix and count the number of columns
+  read first_row < "$1"
+  for num in ${first_row}; do
+    ((num_cols++))
+  done
+
+  echo -e "${num_rows} ${num_cols}\n"
+}
+
+# TODO: validate command line arguments and use  $1 "${@:2}"  instead of using case
+case "$1" in
+  dims)
+    dims "${@:2}"
+    echo -e "dims() returned $?\n"
+    ;;
+  *)
+    echo 'Invalid operation' >&2
+esac
