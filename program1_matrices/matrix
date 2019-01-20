@@ -57,7 +57,7 @@ is_int_matrix() {
 dims() {
   # ensure there is at most 1 argument
   if [[ "$#" -gt 1 ]]; then
-    echo 'Usage: ./matrix dims [matrix]' >&2
+    echo 'Usage: ./matrix dims [MATRIX]' >&2
     return 1
   # if using file, ensure the file exists
   elif [[ "$#" -eq 1 ]] && [[ ! -f "$1" ]]; then
@@ -72,7 +72,6 @@ dims() {
   #   done < "${1:-/dev/stdin}"
   fi
 
-  # validate the matrix
   if ! is_int_matrix "$1"; then
     echo 'Invalid matrix' >&2
     return 1
@@ -80,20 +79,50 @@ dims() {
 
   # count the number of rows
   local num_rows="$(wc -l < "$1")"
-  # count the number of elements
-  local num_elems="$(wc -w < "$1")"
-  # count the number of columns
-  local num_cols="$(expr ${num_elems} / ${num_rows})"
+  # count the number of columns = num of elements / num of rows
+  local num_cols="$(expr $(wc -w < "$1") / ${num_rows})"
 
   echo "${num_rows} ${num_cols}"
 }
 
+transpose() {
+  # ensure there is at most 1 argument
+  if [[ "$#" -gt 1 ]]; then
+    echo 'Usage: ./matrix transpose [MATRIX]' >&2
+    return 1
+  # if using file, ensure the file exists
+  elif [[ "$#" -eq 1 ]] && [[ ! -f "$1" ]]; then
+    echo 'Could not read file' >&2
+    return 1
+  fi
+
+  if ! is_int_matrix "$1"; then
+    echo 'Invalid matrix' >&2
+    return 1
+  fi
+
+  # get the number of columns
+  local num_cols="$(expr $(wc -w < "$1") / $(wc -l < "$1"))"
+
+  # read each column and output it horizontally
+  for ((i=1;i<=num_cols;i++)); do
+    echo "$(cut -f ${i} "$1" | column)"
+  done
+}
+
 # TODO: validate command line arguments and use  $1 "${@:2}"  instead of using case
 case "$1" in
-  dims)
+  'dims')
     dims "${@:2}"
-    # echo "dims() returned $?"
+    ;;
+  'transpose')
+    transpose "${@:2}"
     ;;
   *)
-    echo 'Invalid operation' >&2
+    echo 'Invalid argument. Usage:' >&2
+    echo './matrix dims [MATRIX]' >&2
+    echo './matrix transpose [MATRIX]' >&2
+    echo './matrix mean [MATRIX]' >&2
+    echo './matrix add MATRIX_LEFT MATRIX_RIGHT' >&2
+    echo './matrix multiply MATRIX_LEFT MATRIX_RIGHT' >&2
 esac
