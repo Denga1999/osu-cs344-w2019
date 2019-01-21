@@ -23,20 +23,43 @@
 is_int_matrix() {
   # ensure there is a non-empty and valid filename to check
   if [[ "$#" -ne 1 ]] || [[ -z "$1" ]] || [[ ! -f "$1" ]]; then
+    echo 'Could not read files and/or arguments' >&2
     return 1
   fi
 
-  # count the number of rows
-  local num_rows="$(wc -l < "$1")"
-  # count the number of elements
-  local num_elems="$(wc -w < "$1")"
+  # read the row in raw format
+  # Credits: https://stackoverflow.com/a/29689199
+  # https://stackoverflow.com/q/17542892
+  while IFS= read -r row; do
+    # invalid if there is any character other than digits, neg signs, tabs, and
+    # newlines
+    if [[ "${row}" =~ [^\t\d\-\n] ]]; then
+      echo 'Invalid matrix (non-digit/negative sign/tab/newline detected)' >&2
+      return 1
+    fi
+    # invalid if 2 or more consecutive neg signs or tabs
+    if [[ "${rows}" =~ [\-]{2,} ]] || [[ "${row}" =~ [\t]{2,} ]]; then
+      echo 'Invalid matrix (two or more tabs/negative signs detected)' >&2
+      return 1
+    fi
+    # invalid if the raw row ends or starts with a non-digit
+    if [[ "${row}" =~ [^\d]$ ]] || [[ "${row}" =~ ^[^\d] ]]; then
+      echo 'Invalid matrix (trailing/leading with a non-digit)' >&2
+      return 1
+    fi
+  done < "$1"
 
-  # #elements must be divisible by #rows
-  if [[ "$(expr ${num_elems} % ${num_rows})" -ne 0 ]]; then
-    return 1
-  fi
-
-  # TODO: Check integers
+  # ensure all rows have the same number of elements as the header row
+  local header="$(head -n 1 "$1")"
+  header=(${header})
+  local num_cols=${#header[@]}
+  while read row; do
+    row=(${row})
+    if [[ ${#row[@]} -ne ${num_cols} ]]; then
+      echo 'Invalid matrix (not rectangular)' >&2
+      return 1
+    fi
+  done < "$1"
 
   return 0
 }
@@ -74,27 +97,35 @@ round_div() {
 # RETURNS
 #   None
 dims() {
+  local fin="fin$$"
+
   # ensure there is at most 1 argument
   if [[ "$#" -gt 1 ]]; then
     echo 'Usage: ./matrix dims [MATRIX]' >&2
     return 1
   # if using file, ensure the file exists
-  elif [[ "$#" -eq 1 ]] && [[ ! -f "$1" ]]; then
-    echo 'Could not read file' >&2
-    return 1
+  elif [[ "$#" -eq 1 ]]; then
+    if [[ ! -f "$1" ]]; then
+      echo 'Could not read file' >&2
+      return 1
+    else
+      fin="$1"
+    fi
+  # if using stdin, cat to temporary file
+  else
+    cat > "${fin}"
   fi
 
-  if ! is_int_matrix "$1"; then
-    echo 'Invalid matrix' >&2
+  if ! is_int_matrix "${fin}"; then
     return 1
   fi
 
   # count the number of rows
-  local num_rows="$(wc -l < "$1")"
+  local num_rows="$(wc -l < "${fin}")"
   # count the number of columns = num of elements / num of rows
-  local num_cols="$(expr $(wc -w < "$1") / ${num_rows})"
+  local num_cols="$(expr $(wc -w < "${fin}") / ${num_rows})"
 
-  printf "%d %d" ${num_rows} ${num_cols}
+  printf "%d %d\n" ${num_rows} ${num_cols}
 }
 
 # Prints a matrix reflected along the main diagonal. In other words, prints the
@@ -111,27 +142,35 @@ dims() {
 # RETURNS
 #   None
 transpose() {
+  local fin="fin$$"
+
   # ensure there is at most 1 argument
   if [[ "$#" -gt 1 ]]; then
     echo 'Usage: ./matrix transpose [MATRIX]' >&2
     return 1
   # if using file, ensure the file exists
-  elif [[ "$#" -eq 1 ]] && [[ ! -f "$1" ]]; then
-    echo 'Could not read file' >&2
-    return 1
+  elif [[ "$#" -eq 1 ]]; then
+    if [[ ! -f "$1" ]]; then
+      echo 'Could not read file' >&2
+      return 1
+    else
+      fin="$1"
+    fi
+  # if using stdin, use temporary file
+  else
+    cat > "${fin}"
   fi
 
-  if ! is_int_matrix "$1"; then
-    echo 'Invalid matrix' >&2
+  if ! is_int_matrix "${fin}"; then
     return 1
   fi
 
   # get the number of columns
-  local num_cols="$(expr $(wc -w < "$1") / $(wc -l < "$1"))"
- 
+  local num_cols="$(expr $(wc -w < "${fin}") / $(wc -l < "${fin}"))"
+
   # read each column and output it horizontally
   for ((i=1;i<=num_cols;i++)); do
-    printf "%s\n" "$(cut -f ${i} "$1" | column)"
+    printf "%s\n" "$(cut -f ${i} "${fin}" | column)"
   done
 }
 
@@ -148,30 +187,37 @@ transpose() {
 # RETURNS
 #   None
 mean() {
+  local fin="fin$$"
+
   # ensure there is at most 1 argument
   if [[ "$#" -gt 1 ]]; then
     echo 'Usage: ./matrix mean [MATRIX]' >&2
     return 1
   # if using file, ensure the file exists
-  elif [[ "$#" -eq 1 ]] && [[ ! -f "$1" ]]; then
-    echo 'Could not read file' >& 2
-    return 1
+  elif [[ "$#" -eq 1 ]]; then
+    if [[ ! -f "$1" ]]; then
+      echo 'Could not read file' >& 2
+      return 1
+    else
+      fin="$1"
+    fi
+  else
+    cat > "${fin}"
   fi
 
-  if ! is_int_matrix "$1"; then
-    echo 'Invalid matrix' >&2
+  if ! is_int_matrix "${fin}"; then
     return 1
   fi
 
   # get the number of rows
-  local num_rows="$(wc -l < "$1")"
+  local num_rows="$(wc -l < "${fin}")"
   # get the number of columns
-  local num_cols="$(expr $(wc -w < "$1") / ${num_rows})"
+  local num_cols="$(expr $(wc -w < "${fin}") / ${num_rows})"
 
   # read each column
   for ((i=1;i<=num_cols;i++)); do
-    local col="$(cut -f ${i} "$1" | column)"
-   
+    local col="$(cut -f ${i} "${fin}" | column)"
+
     # get the mean of the current column
     local sum=0
     for elem in ${col}; do
@@ -189,6 +235,8 @@ mean() {
     fi
   done
 }
+
+trap "rm -f fin$$" INT HUP TERM
 
 # TODO: validate command line arguments and use  $1 "${@:2}"  instead of using case
 case "$1" in
@@ -209,3 +257,6 @@ case "$1" in
     echo './matrix add MATRIX_LEFT MATRIX_RIGHT' >&2
     echo './matrix multiply MATRIX_LEFT MATRIX_RIGHT' >&2
 esac
+
+# clean up
+rm -f "fin$$"
