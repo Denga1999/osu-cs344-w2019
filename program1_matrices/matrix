@@ -31,6 +31,10 @@ is_int_matrix() {
   # Credits: https://stackoverflow.com/a/29689199
   # https://stackoverflow.com/q/17542892
   while IFS= read -r row; do
+    for ((i=0;i<${#row};i++)); do
+      printf "Char:%s; " "${row:${i}:1}"
+    done
+    printf "\n"
     # invalid if there is any character other than digits, neg signs, tabs, and
     # newlines
     if [[ "${row}" =~ [^\t\d\-\n] ]]; then
