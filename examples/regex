@@ -1,0 +1,14 @@
+#!/bin/bash
+
+while IFS= read -r row; do
+  printf "Whole row is:%s\n" "${row}"
+  printf "Reading row's characters:\n"
+  for ((i=0;i<${#row};i++)); do
+    printf "Char %d:%s; " "${i}" "${row:${i}:1}"
+  done
+  printf "\n"
+
+  if [[ "${row}" =~ [^\t\d] ]]; then
+    echo 'Row matches non-tabs and non-digits' >&2
+  fi
+done < "$1"
