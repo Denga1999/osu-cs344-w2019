@@ -1,7 +1,0 @@
-#!/bin/bash
-
-first_row=$(head -n 1 $1)
-first_row_with_quotes=$(head -n 1 "$1")
-
-echo -e "First row:\n${first_row}\n"
-echo -e "First row with quote:\n${first_row_with_quotes}\n"
