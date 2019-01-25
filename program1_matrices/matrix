@@ -25,7 +25,8 @@ round_div() {
     return 1
   fi
 
-  _RET=$((($1 + ($2 / 2) * ( ($1 > 0) * 2 - 1 )) / $2))
+  # formula provided by Brewster
+  _RET="$((($1 + ($2 / 2) * (2 * ($1 > 0) - 1 )) / $2))"
 }
 
 # Prints the dimensions of the matrix as the number of rows, followed by a
@@ -60,12 +61,15 @@ dims() {
     cat > "${fin}"
   fi
 
+  # read the first row of matrix as an array
+  read -a header < "${fin}"
+
   # count the number of rows
   local num_rows="$(wc -l < "${fin}")"
-  # count the number of columns = num of elements / num of rows
-  local num_cols="$(expr $(wc -w < "${fin}") / ${num_rows})"
+  # count the number of columns = num of elements in the header row
+  local num_cols="${#header[@]}"
 
-  printf "%d %d\n" ${num_rows} ${num_cols}
+  printf "%d %d\n" "${num_rows}" "${num_cols}"
 }
 
 # Prints a matrix reflected along the main diagonal. In other words, prints the
@@ -102,11 +106,12 @@ transpose() {
   fi
 
   # get the number of columns
-  local num_cols="$(expr $(wc -w < "${fin}") / $(wc -l < "${fin}"))"
+  read -a header < "${fin}"
+  local num_cols="${#header[@]}"
 
-  # read each column and output it horizontally
+  # loop through the columns and transpose each of them
   for ((i=1;i<=num_cols;i++)); do
-    printf "%s\n" "$(cut -f ${i} "${fin}" | column)"
+    printf "%s\n" "$(cut -f "${i}" "${fin}" | column)"
   done
 }
 
@@ -141,25 +146,25 @@ mean() {
     cat > "${fin}"
   fi
 
-  # get the number of rows
-  local num_rows="$(wc -l < "${fin}")"
-  # get the number of columns
-  local num_cols="$(expr $(wc -w < "${fin}") / ${num_rows})"
+  # use the dims() function to get dimensions of the matrix
+  local dimensions=($(dims "${fin}"))
+  local num_rows="${dimensions[0]}"
+  local num_cols="${dimensions[1]}"
 
   # read each column
   for ((i=1;i<=num_cols;i++)); do
-    local col="$(cut -f ${i} "${fin}" | column)"
+    local col="$(cut -f "${i}" "${fin}" | column)"
 
     # get the mean of the current column
     local sum=0
-    for elem in ${col}; do
-      sum="$(expr ${sum} + ${elem})"
+    for num in ${col}; do
+      ((sum+=num))
     done
-    round_div ${sum} ${num_rows}
-    local avg=${_RET}
+    round_div "${sum}" "${num_rows}"
+    local avg="${_RET}"
 
     # print result with correct format
-    printf "%d" ${avg}
+    printf "%d" "${avg}"
     if [[ "${i}" -lt "${num_cols}" ]]; then
       printf "\t"
     else
