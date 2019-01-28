@@ -51,9 +51,9 @@ dims() {
     echo 'Usage: ./matrix dims [MATRIX]' >&2
     exit 1
   fi
-  # if using file, ensure the file exists
+  # if using file, ensure the file is readable
   if [[ "$#" -eq 1 ]]; then
-    if [[ ! -f "$1" ]]; then
+    if [[ ! -r "$1" ]]; then
       echo 'Could not read file' >&2
       exit 1
     else
@@ -97,9 +97,9 @@ transpose() {
     echo 'Usage: ./matrix transpose [MATRIX]' >&2
     exit 1
   fi
-  # if using file, ensure the file exists
+  # if using file, ensure the file is readable
   if [[ "$#" -eq 1 ]]; then
-    if [[ ! -f "$1" ]]; then
+    if [[ ! -r "$1" ]]; then
       echo 'Could not read file' >&2
       exit 1
     else
@@ -177,9 +177,9 @@ mean() {
     echo 'Usage: ./matrix mean [MATRIX]' >&2
     exit 1
   fi
-  # if using file, ensure the file exists
+  # if using file, ensure the file is readable
   if [[ "$#" -eq 1 ]]; then
-    if [[ ! -f "$1" ]]; then
+    if [[ ! -r "$1" ]]; then
       echo 'Could not read file' >&2
       exit 1
     else
@@ -238,8 +238,8 @@ add() {
     echo 'Usage: ./matrix add MATRIX_LEFT MATRIX_RIGHT' >&2
     exit 1
   fi
-  # ensure the files exist
-  if [[ ! -f "$1" ]] || [[ ! -f "$2" ]]; then
+  # ensure the files are readable
+  if [[ ! -r "$1" ]] || [[ ! -r "$2" ]]; then
     echo 'Could not read file(s)' >&2
     exit 1
   fi
@@ -319,8 +319,8 @@ multiply() {
     echo 'Usage: ./matrix multiply MATRIX_LEFT MATRIX_RIGHT' >&2
     exit 1
   fi
-  # ensure the files exist
-  if [[ ! -f "$1" ]] || [[ ! -f "$2" ]]; then
+  # ensure the files are readable
+  if [[ ! -r "$1" ]] || [[ ! -r "$2" ]]; then
     echo 'Could not read file(s)' >&2
     exit 1
   fi
