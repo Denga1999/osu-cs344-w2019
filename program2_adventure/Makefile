@@ -1,17 +1,20 @@
 CC = gcc
-# CFLAGS = -ansi -g -Wall -Wextra
+CFLAGS = -std=c89 -g -Wall -Wextra
 
 ALL = luuph.buildrooms luuph.adventure
 
 all: $(ALL)
 
 luuph.buildrooms: luuph.buildrooms.c
-	$(CC) $? -o $@
+	$(CC) $(CFLAGS) $? -o $@
 
 luuph.adventure: luuph.adventure.c
-	$(CC) -lpthread $? -o $@
+	$(CC) $(CFLAGS) -lpthread $? -o $@
 
-.PHONY: clean
+.PHONY: clean cleanall
 
 clean:
 	rm -f $(ALL)
+
+cleanall:
+	rm -rf $(ALL) luuph.rooms.*
