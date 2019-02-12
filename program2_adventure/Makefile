@@ -15,6 +15,3 @@ luuph.adventure: luuph.adventure.c
 
 clean:
 	rm -f $(ALL)
-
-cleanall:
-	rm -rf $(ALL) luuph.rooms.*
