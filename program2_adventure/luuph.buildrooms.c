@@ -7,6 +7,7 @@
  * CS_344_001_W2019 Operating Systems 1
  * Program 2: Adventure
  */
+
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
