@@ -11,10 +11,12 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <dirent.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <ctype.h>
 #include <time.h>
 #include <assert.h>
 
@@ -50,6 +52,7 @@ typedef struct DynamicIntArray {
 } DynIntArr;
 
 void GetNewestRoomDir(char* dirname);
+bool IsNewestRoomDir(char* dirname, time_t* current_newest);
 void ReadRoomsFromDir(char* dirname, Room* rooms);
 void PlayGame(Room* rooms);
 int GetUserInput(Room* rooms, int index);
@@ -63,6 +66,10 @@ int main(void) {
     /* find the newest room directory */
     char room_dirname[MAX_DIRNAME_LEN];
     GetNewestRoomDir(room_dirname);
+
+    printf("%s\n", room_dirname);
+
+    return 0;
 
     /* read the rooms in the directory into the  rooms  array */
     Room rooms[NUM_ROOMS];
@@ -85,7 +92,109 @@ int main(void) {
 void GetNewestRoomDir(char* dirname) {
     assert(dirname);
 
-    /* TODO */
+    /* open the current directory and see what's in it */
+    struct dirent* entry;
+    DIR* root_dir = opendir(".");
+    if (root_dir) {
+        /* run through all entries of the directory */
+        time_t newest_mod_time = 0;
+        while ((entry = readdir(root_dir))) {
+            /* printf("Entry name: %s\n", entry->d_name); */
+            /* if there is a newer directory found, mark that directory */
+            if (IsNewestRoomDir(entry->d_name, &newest_mod_time)) {
+                strcpy(dirname, entry->d_name);
+            }
+        }
+
+        closedir(root_dir);
+    }
+}
+
+/**
+ * Returns  true  if the directory named  dirname  satisfies both conditions:
+ * - has a valid room directory name format, that is
+ *   ONID_USERNAME.rooms.PROCESS_ID
+ * - is the most recently modified directory in the scope, that is the time of
+ *   last modified is greater than  current_newest
+ * Returns  false  otherwise.
+ *
+ * Arguments:
+ *   dirname         a string to hold the name of the current room directory
+ *   current_newest  the current newest (largest) last-modified time
+ *
+ * Whenever a there is a new latest-modifed time, the value of  current_newest
+ * will be updated.
+ */
+bool IsNewestRoomDir(char* dirname, time_t* current_newest) {
+    /* printf("  Current newest = %f\n", (double)*current_newest); */
+
+    /* get statistics about this directory */
+    struct stat st;
+    int stat_status = stat(dirname, &st);
+
+    /* get a temporary string to hold dirname since it will be split later */
+    char dirname_tmp[MAX_DIRNAME_LEN];
+    strcpy(dirname_tmp, dirname);
+
+    /* printf("  Original dirname = %s\n", dirname); */
+
+    /* if  stat()  does not succeed or if not a directory, return false */
+    if (stat_status != 0 || !S_ISDIR(st.st_mode)) return false;
+
+    /* printf("  Passed stat() and is a dir\n"); */
+
+    /* divide the name into tokens with '.' being the delimiter */
+    char* name_tok = strtok(dirname_tmp, ".");  /* get 1st token */
+
+    /* if 1st token does not exist or not match name format, return false */
+    if (!name_tok || strcmp(name_tok, ONID_USERNAME) != 0) return false;
+
+    /* printf("  Passed 1st token\n"); */
+    /* printf("  dirname = %s ; name_tok = %s\n", dirname, name_tok); */
+
+    /* continue getting the 2nd token */
+    name_tok = strtok(NULL, ".");
+
+    /* if 2nd token does not exist or not match name format, return false */
+    if (!name_tok || strcmp(name_tok, "rooms") != 0) return false;
+
+    /* printf("  Passed 2nd token\n"); */
+    /* printf("  dirname = %s ; name_tok = %s\n", dirname, name_tok); */
+
+    /* continue getting the 3rd token */
+    name_tok = strtok(NULL, ".");
+
+    /* if 3rd token does not exist, return false */
+    if (!name_tok) return false;
+
+    /* printf("  dirname = %s ; name_tok = %s\n", dirname, name_tok); */
+
+    int i, tok_len = strlen(name_tok);
+
+    /* if 3rd token contains a non-digit character, return false */
+    for (i = 0; i < tok_len; i++)
+        if (!isdigit(name_tok[i])) return false;
+
+    /* printf("  Passed 3rd token\n"); */
+
+    /* if there are more than 3 tokens, return false */
+    if (strtok(NULL, ".")) return false;
+
+    /* printf("  Passed name conditions\n"); */
+
+    /* if pass all tests above,  dirname  is the name of a room directory
+     * now check if this directory's time of last modified is greater than the
+     * current newest time. If so, this directory is the newest.
+     */
+    if ((double)difftime(st.st_mtime, *current_newest) > 0) {
+        *current_newest = st.st_mtime;
+
+        /* printf("  Passed all tests. Current newest = %f\n", */
+        /*        (double)*current_newest); */
+        return true;
+    } else {
+        return false;
+    }
 }
 
 /**
