@@ -55,6 +55,19 @@ typedef struct DynamicIntArray {
     int capacity;
 } DynIntArr;
 
+typedef struct TimeThreadArgs {
+    bool is_reading;
+    char filename[MAX_DIRNAME_LEN];
+} TimeThreadArgs;
+
+/**
+ * Multithreading stuff
+ */
+pthread_t time_thread;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+TimeThreadArgs time_thread_args;
+
+void* MainTimeThread(void* arguments);
 void InitRooms(Room* rooms, int size);
 void GetNewestRoomDir(char* dirname);
 bool IsNewestRoomDir(char* dirname, time_t* current_newest);
@@ -62,7 +75,7 @@ void ReadRoomsFromDir(char* dirname, Room* rooms);
 void ReadRoomFromFile(char* filepath, Room* rooms, int* size);
 void PlayGame(Room* rooms);
 int GetUserInput(Room* rooms, int index, bool is_short_menu);
-void* PrintTimeToFile(void* arg);
+void PrintTimeToFile(char* filename);
 void GetTimeFromFile(char* filename, char* result);
 int FindRoomByName(Room* rooms, int size, char* name);
 int FindStartRoomIndex(Room* rooms, int size);
@@ -80,9 +93,39 @@ int main(void) {
     InitRooms(rooms, NUM_ROOMS);
     ReadRoomsFromDir(room_dirname, rooms);
 
+    /* init parameters for multithreading */
+    time_thread_args.is_reading = false;
+    time_thread_args.filename[0] = '\0';
+
+    /* let game run on main thread and time keep on a second thread */
+    assert(pthread_create(&time_thread, NULL,
+                          MainTimeThread, (void*)&time_thread_args) == 0);
+
     PlayGame(rooms);
 
+    /* clean up */
+    pthread_mutex_destroy(&mutex);
+    pthread_cancel(time_thread);
+
     return 0;
+}
+
+/**
+ * This the startup function for the  time_thread  defined globally.
+ */
+void* MainTimeThread(void* arguments) {
+    pthread_mutex_lock(&mutex);
+    
+    TimeThreadArgs* args = (TimeThreadArgs*)arguments;
+
+    /* wait until a reading signal is set */
+    while (!args->is_reading);
+
+    PrintTimeToFile(args->filename);
+   
+    args->is_reading = false;
+    pthread_mutex_unlock(&mutex);
+    return NULL;
 }
 
 /**
@@ -377,17 +420,12 @@ void PlayGame(Room* rooms) {
                 printf("HUH? I DON'T UNDERSTAND THAT ROOM. TRY AGAIN.\n\n");
             } else if (next_room_idx == -2) {
                 /* if user wants to see time, get time on a new thread */
-                pthread_t time_thread;
-                int result_code = pthread_create(&time_thread,
-                                                 NULL,
-                                                 PrintTimeToFile,
-                                                 NULL);
-                assert(result_code == 0);
+                time_thread_args.is_reading = true;
+                strcpy(time_thread_args.filename, TIME_FILE_NAME);
 
                 /* wait for time thread to complete */
-                result_code = pthread_join(time_thread, NULL);
-                assert(result_code == 0);
-                
+                /* assert(pthread_join(time_thread, NULL) == 0); */
+
                 /* get time from the file and print to terminal */
                 char time_str[MAX_TIME_STR_LEN];
                 GetTimeFromFile(TIME_FILE_NAME, time_str);
@@ -425,7 +463,7 @@ void PlayGame(Room* rooms) {
  */
 int GetUserInput(Room* rooms, int index, bool is_short_menu) {
     assert(rooms && index >= 0);
-
+      
     int i;
     int num_outbounds = rooms[index].num_outbounds;
 
@@ -476,12 +514,10 @@ int GetUserInput(Room* rooms, int index, bool is_short_menu) {
 }
 
 /**
- * Prints the current local time to a file named  TIME_FILE_NAME .
- *
- * This is the startup function for the  time_thread  created in  PlayGame() .
+ * Prints the current local time to a file named  filename .
  */
-void* PrintTimeToFile(void* arg) {
-    FILE* timefile = fopen(TIME_FILE_NAME, "w");
+void PrintTimeToFile(char* filename) {
+    FILE* timefile = fopen(filename, "w");
     assert(timefile);
 
     time_t t;
@@ -496,8 +532,6 @@ void* PrintTimeToFile(void* arg) {
     fprintf(timefile, "%s\n", time_str);
 
     fclose(timefile);
-
-    return NULL;
 }
 
 /**
@@ -513,7 +547,7 @@ void GetTimeFromFile(char* filename, char* result) {
     /* read the one (and supposedly the only) line in file */
     char time_str[MAX_TIME_STR_LEN];
     fgets(time_str, sizeof(time_str), timefile);
-   
+
     /* trim the trailing newline if any */
     unsigned int time_str_len = strlen(time_str);
     if (time_str[time_str_len - 1] == '\n')
