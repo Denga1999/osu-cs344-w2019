@@ -12,6 +12,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -29,6 +30,8 @@
 #define MAX_NAME_LEN (int)9
 #define MAX_OUTBOUNDS (int)6
 #define MAX_STR_INPUT_LEN (int)256
+#define TIME_FILE_NAME (char*)"currentTime.txt"
+#define MAX_TIME_STR_LEN (int)50
 
 /**
  * Define new types
@@ -58,7 +61,9 @@ bool IsNewestRoomDir(char* dirname, time_t* current_newest);
 void ReadRoomsFromDir(char* dirname, Room* rooms);
 void ReadRoomFromFile(char* filepath, Room* rooms, int* size);
 void PlayGame(Room* rooms);
-int GetUserInput(Room* rooms, int index);
+int GetUserInput(Room* rooms, int index, bool is_short_menu);
+void* PrintTimeToFile(void* arg);
+void GetTimeFromFile(char* filename, char* result);
 int FindRoomByName(Room* rooms, int size, char* name);
 int FindStartRoomIndex(Room* rooms, int size);
 void InitDynIntArr(DynIntArr* arr, int capacity);
@@ -261,8 +266,7 @@ void ReadRoomFromFile(char* filepath, Room* rooms, int* size) {
     assert(filepath && rooms);
 
     FILE* roomfile = fopen(filepath, "r");
-
-    if (!roomfile) return;
+    assert(roomfile);
 
     Room* current_room = NULL;
     char line[MAX_DIRNAME_LEN];
@@ -366,11 +370,30 @@ void PlayGame(Room* rooms) {
 
         /* keep prompting the user for outbound room name until valid input */
         do {
-            next_room_idx = GetUserInput(rooms, room_idx);
+            next_room_idx = GetUserInput(rooms, room_idx, next_room_idx == -2);
+
+            /* if invalid input, print error message */
             if (next_room_idx == -1) {
                 printf("HUH? I DON'T UNDERSTAND THAT ROOM. TRY AGAIN.\n\n");
+            } else if (next_room_idx == -2) {
+                /* if user wants to see time, get time on a new thread */
+                pthread_t time_thread;
+                int result_code = pthread_create(&time_thread,
+                                                 NULL,
+                                                 PrintTimeToFile,
+                                                 NULL);
+                assert(result_code == 0);
+
+                /* wait for time thread to complete */
+                result_code = pthread_join(time_thread, NULL);
+                assert(result_code == 0);
+                
+                /* get time from the file and print to terminal */
+                char time_str[MAX_TIME_STR_LEN];
+                GetTimeFromFile(TIME_FILE_NAME, time_str);
+                printf("%s\n\n", time_str);
             }
-        } while (next_room_idx == -1);
+        } while (next_room_idx == -1 || next_room_idx == -2);
 
         /* being here means the user has entered valid outbound room name,
          * so move to the next room */
@@ -392,29 +415,33 @@ void PlayGame(Room* rooms) {
  * Gets the user's raw choice of outbound for the current rooms[index].
  *
  * Arguments:
- *   rooms  the array consisting of room structures
- *   index  the index of the current room the user is in
+ *   rooms          the array consisting of room structures
+ *   index          the index of the current room the user is in
+ *   is_short_menu  if only needs to print "WHERE TO? >" prompt
  *
  * Returns:
  *   The index of the outbound room if the user enters correctly, OR
  *   -1 if the user enters invalid room outbound name.
  */
-int GetUserInput(Room* rooms, int index) {
+int GetUserInput(Room* rooms, int index, bool is_short_menu) {
     assert(rooms && index >= 0);
 
-    /* print menu */
-    printf("CURRENT LOCATION: %s\n", rooms[index].name);
-
-    printf("POSSIBLE CONNECTIONS:");
     int i;
     int num_outbounds = rooms[index].num_outbounds;
-    for (i = 0; i < num_outbounds; i++) {
-        printf(" %s", rooms[index].outbounds[i]->name);
-        /* print separator ',' if not finished, otherwise print '.' and EOL */
-        if (i < num_outbounds - 1) {
-            printf(",");
-        } else {
-            printf(".\n");
+
+    /* print menu */
+    if (!is_short_menu) {
+        printf("CURRENT LOCATION: %s\n", rooms[index].name);
+
+        printf("POSSIBLE CONNECTIONS:");
+        for (i = 0; i < num_outbounds; i++) {
+            printf(" %s", rooms[index].outbounds[i]->name);
+            /* print separator ',' if not finished, otherwise print '.' and EOL */
+            if (i < num_outbounds - 1) {
+                printf(",");
+            } else {
+                printf(".\n");
+            }
         }
     }
 
@@ -429,7 +456,10 @@ int GetUserInput(Room* rooms, int index) {
     /* trim the trailing EOL character */
     unsigned int name_input_len = strlen(name_input);
     if (name_input[name_input_len - 1] == '\n')
-        name_input[name_input_len - 1] = '\0';
+        name_input[--name_input_len] = '\0';
+
+    /* if user types in "time", return -2 */
+    if (strcmp(name_input, "time") == 0) return -2;
 
     /* illegal input if more than  MAX_NAME_LEN  characters */
     if (strlen(name_input) > MAX_NAME_LEN) return -1;
@@ -443,6 +473,56 @@ int GetUserInput(Room* rooms, int index) {
 
     /* if cannot find the name in the outbound list, illegal input */
     return -1;
+}
+
+/**
+ * Prints the current local time to a file named  TIME_FILE_NAME .
+ *
+ * This is the startup function for the  time_thread  created in  PlayGame() .
+ */
+void* PrintTimeToFile(void* arg) {
+    FILE* timefile = fopen(TIME_FILE_NAME, "w");
+    assert(timefile);
+
+    time_t t;
+    struct tm* thetime;
+    char time_str[MAX_TIME_STR_LEN];
+
+    time(&t);
+    thetime = localtime(&t);
+
+    strftime(time_str, sizeof(time_str), "%l:%M%P, %A, %B %e, %Y", thetime);
+
+    fprintf(timefile, "%s\n", time_str);
+
+    fclose(timefile);
+
+    return NULL;
+}
+
+/**
+ * Gets the time in string format in the file named  filename  and copy it to
+ * the  result  string.
+ *
+ * The  result  string will be modified after the function returns.
+ */
+void GetTimeFromFile(char* filename, char* result) {
+    FILE* timefile = fopen(filename, "r");
+    assert(timefile);
+
+    /* read the one (and supposedly the only) line in file */
+    char time_str[MAX_TIME_STR_LEN];
+    fgets(time_str, sizeof(time_str), timefile);
+   
+    /* trim the trailing newline if any */
+    unsigned int time_str_len = strlen(time_str);
+    if (time_str[time_str_len - 1] == '\n')
+        time_str[--time_str_len] = '\0';
+
+    /* copy to result */
+    strcpy(result, time_str);
+
+    fclose(timefile);
 }
 
 /**

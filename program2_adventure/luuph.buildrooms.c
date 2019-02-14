@@ -302,26 +302,24 @@ void OutputRoomsToFiles(char* dirname, Room* rooms) {
         strcat(filename, "/");
         strcat(filename, FILE_NAMES[i]);
 
-        /* try opening the file for writing */
+        /* open the file for writing */
         FILE* roomfile = fopen(filename, "w");
+        assert(roomfile);
 
-        /* only write to file if opened successfully */
-        if (roomfile) {
-            /* room name */
-            fprintf(roomfile, "ROOM NAME: %s\n", rooms[i].name);
+        /* room name */
+        fprintf(roomfile, "ROOM NAME: %s\n", rooms[i].name);
 
-            /* room outbound connections */
-            for (j = 0; j < rooms[i].num_outbounds; j++) {
-                fprintf(roomfile, "CONNECTION %d: %s\n", j + 1,
-                        rooms[i].outbounds[j]->name);
-            }
-
-            /* room type */
-            fprintf(roomfile, "ROOM TYPE: %s\n", ROOM_TYPES[rooms[i].type]);
-
-            /* clean up */
-            fclose(roomfile);
+        /* room outbound connections */
+        for (j = 0; j < rooms[i].num_outbounds; j++) {
+            fprintf(roomfile, "CONNECTION %d: %s\n", j + 1,
+                    rooms[i].outbounds[j]->name);
         }
+
+        /* room type */
+        fprintf(roomfile, "ROOM TYPE: %s\n", ROOM_TYPES[rooms[i].type]);
+
+        /* clean up */
+        fclose(roomfile);
     }
 }
 
