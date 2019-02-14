@@ -28,6 +28,7 @@
 #define NUM_ROOMS (int)7
 #define MAX_NAME_LEN (int)9
 #define MAX_OUTBOUNDS (int)6
+#define MAX_STR_INPUT_LEN (int)256
 
 /**
  * Define new types
@@ -63,7 +64,7 @@ int FindStartRoomIndex(Room* rooms, int size);
 void InitDynIntArr(DynIntArr* arr, int capacity);
 void PushBackDynIntArr(DynIntArr* arr, int value);
 void DeleteDynIntArr(DynIntArr* arr);
-void PrintRooms(Room* rooms, int size);
+/* void PrintRooms(Room* rooms, int size); */
 
 int main(void) {
     /* find the newest room directory */
@@ -262,8 +263,8 @@ void ReadRoomsFromDir(char* dirname, Room* rooms) {
 
     closedir(root_dir);
 
-    printf("ROOMS READ FROM DIRECTORY ARE:\n");
-    PrintRooms(rooms, NUM_ROOMS);
+    /* printf("ROOMS READ FROM DIRECTORY ARE:\n"); */
+    /* PrintRooms(rooms, NUM_ROOMS); */
 }
 
 /**
@@ -291,13 +292,13 @@ void ReadRoomFromFile(char* filepath, Room* rooms, int* size, int* idx) {
 
     if (!roomfile) return;
 
-    printf("ROOM FILE PATH: %s\n", filepath);
+    /* printf("ROOM FILE PATH: %s\n", filepath); */
     Room* current_room = NULL;
     char line[MAX_DIRNAME_LEN];
 
     /* read the file line by line */
     while (fgets(line, sizeof(line), roomfile)) {
-        printf("    Line = %s", line);
+        /* printf("  Line = %s", line); */
 
         /* tokenize the line by whitespace */
         strtok(line, " ");  /* 1st token -> ignore */
@@ -327,7 +328,7 @@ void ReadRoomFromFile(char* filepath, Room* rooms, int* size, int* idx) {
             /* room name is always the first to be read, so there must always be
              * a "current room" after that */
             assert(current_room);
-            
+
             if (strcmp(line_tok3, "MID_ROOM") == 0) {
                 current_room->type = MID_ROOM;
             } else if (strcmp(line_tok3, "START_ROOM") == 0) {
@@ -364,25 +365,12 @@ void ReadRoomFromFile(char* filepath, Room* rooms, int* size, int* idx) {
         }
     }
 
-    printf("\n    Current room's name = %s\n", current_room->name);
-    int j;
-    for (j = 0; j < current_room->num_outbounds; j++) {
-        printf("    Current room's connection %d: %s\n", j + 1, current_room->outbounds[j]->name);
-    }
-    printf("    Current room's type = %d\n", current_room->type);
-    
-
-    /* printf("    Read into rooms[%d].name = %s\n", *idx, rooms[*idx].name); */
-    /* unsigned int i; */
-    /* for (i = 0; i < strlen(rooms[*idx].name); i++) { */
-    /*     printf("%d: ", i); */
-    /*     if (isalpha(rooms[*idx].name[i])) { */
-    /*         printf("%c", rooms[*idx].name[i]); */
-    /*     } else if (rooms[*idx].name[i] == '\n') { */
-    /*         printf("\\n"); */
-    /*     } */
-    /*     printf("\n"); */
+    /* printf("\n  Current room's name = %s\n", current_room->name); */
+    /* int j; */
+    /* for (j = 0; j < current_room->num_outbounds; j++) { */
+    /*     printf("  Current room's connection %d: %s\n", j + 1, current_room->outbounds[j]->name); */
     /* } */
+    /* printf("  Current room's type = %d\n", current_room->type); */
 
     fclose(roomfile);
 }
@@ -418,7 +406,7 @@ void PlayGame(Room* rooms) {
         do {
             next_room_idx = GetUserInput(rooms, room_idx);
             if (next_room_idx == -1) {
-                printf("\nHUH? I DON'T UNDERSTAND THAT ROOM. TRY AGAIN\n\n");
+                printf("HUH? I DON'T UNDERSTAND THAT ROOM. TRY AGAIN.\n\n");
             }
         } while (next_room_idx == -1);
 
@@ -428,7 +416,7 @@ void PlayGame(Room* rooms) {
     }
 
     /* game is over, print path taken, number of steps, and victory message */
-    printf("\nYOU HAVE FOUND THE END ROOM. CONGRATULATIONS!\n");
+    printf("YOU HAVE FOUND THE END ROOM. CONGRATULATIONS!\n");
     printf("YOU TOOK %d STEPS. YOUR PATH TO VICTORY WAS:\n",
            room_idx_path.size - 1);
     int i;
@@ -471,10 +459,28 @@ int GetUserInput(Room* rooms, int index) {
     printf("WHERE TO? >");
 
     /* get user's raw input */
-    char name_input[MAX_NAME_LEN];
-    fgets(name_input, MAX_NAME_LEN, stdin);
+    char name_input[MAX_STR_INPUT_LEN];
+    fgets(name_input, sizeof(name_input), stdin);
 
-    return FindRoomByName(rooms, NUM_ROOMS, name_input);
+    printf("\n");
+
+    /* trim the trailing EOL character */
+    unsigned int name_input_len = strlen(name_input);
+    if (name_input[name_input_len - 1] == '\n')
+        name_input[name_input_len - 1] = '\0';
+
+    /* illegal input if more than  MAX_NAME_LEN  characters */
+    if (strlen(name_input) > MAX_NAME_LEN) return -1;
+
+    /* only find the room with this name if the name is in the outbound list */
+    for (i = 0; i < num_outbounds; i++) {
+        if (strcmp(name_input, rooms[index].outbounds[i]->name) == 0) {
+            return FindRoomByName(rooms, NUM_ROOMS, name_input);
+        }
+    }
+
+    /* if cannot find the name in the outbound list, illegal input */
+    return -1;
 }
 
 /**
@@ -585,6 +591,7 @@ void DeleteDynIntArr(DynIntArr* arr) {
  * Print the contents of all rooms in the  rooms  array of size  size  to the
  * terminal.
  */
+/*
 void PrintRooms(Room* rooms, int size) {
     assert(rooms);
 
@@ -605,3 +612,4 @@ void PrintRooms(Room* rooms, int size) {
         }
     }
 }
+*/
