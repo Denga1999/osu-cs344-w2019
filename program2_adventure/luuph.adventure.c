@@ -56,7 +56,7 @@ void InitRooms(Room* rooms, int size);
 void GetNewestRoomDir(char* dirname);
 bool IsNewestRoomDir(char* dirname, time_t* current_newest);
 void ReadRoomsFromDir(char* dirname, Room* rooms);
-void ReadRoomFromFile(char* filepath, Room* rooms, int* size, int* idx);
+void ReadRoomFromFile(char* filepath, Room* rooms, int* size);
 void PlayGame(Room* rooms);
 int GetUserInput(Room* rooms, int index);
 int FindRoomByName(Room* rooms, int size, char* name);
@@ -64,7 +64,6 @@ int FindStartRoomIndex(Room* rooms, int size);
 void InitDynIntArr(DynIntArr* arr, int capacity);
 void PushBackDynIntArr(DynIntArr* arr, int value);
 void DeleteDynIntArr(DynIntArr* arr);
-/* void PrintRooms(Room* rooms, int size); */
 
 int main(void) {
     /* find the newest room directory */
@@ -123,7 +122,6 @@ void GetNewestRoomDir(char* dirname) {
         /* run through all entries of the directory */
         time_t newest_mod_time = 0;
         while ((entry = readdir(root_dir))) {
-            /* printf("Entry name: %s\n", entry->d_name); */
             /* if there is a newer directory found, mark that directory */
             if (IsNewestRoomDir(entry->d_name, &newest_mod_time)) {
                 strcpy(dirname, entry->d_name);
@@ -152,8 +150,6 @@ void GetNewestRoomDir(char* dirname) {
 bool IsNewestRoomDir(char* dirname, time_t* current_newest) {
     assert(dirname && current_newest);
 
-    /* printf("  Current newest = %f\n", (double)*current_newest); */
-
     /* get statistics about this directory */
     struct stat st;
     int stat_status = stat(dirname, &st);
@@ -162,12 +158,8 @@ bool IsNewestRoomDir(char* dirname, time_t* current_newest) {
     char dirname_tmp[MAX_DIRNAME_LEN];
     strcpy(dirname_tmp, dirname);
 
-    /* printf("  Original dirname = %s\n", dirname); */
-
     /* if  stat()  does not succeed or if not a directory, return false */
     if (stat_status != 0 || !S_ISDIR(st.st_mode)) return false;
-
-    /* printf("  Passed stat() and is a dir\n"); */
 
     /* divide the name into tokens with '.' being the delimiter */
     char* name_tok = strtok(dirname_tmp, ".");  /* get 1st token */
@@ -175,17 +167,11 @@ bool IsNewestRoomDir(char* dirname, time_t* current_newest) {
     /* if 1st token does not exist or not match name format, return false */
     if (!name_tok || strcmp(name_tok, ONID_USERNAME) != 0) return false;
 
-    /* printf("  Passed 1st token\n"); */
-    /* printf("  dirname = %s ; name_tok = %s\n", dirname, name_tok); */
-
     /* continue getting the 2nd token */
     name_tok = strtok(NULL, ".");
 
     /* if 2nd token does not exist or not match name format, return false */
     if (!name_tok || strcmp(name_tok, "rooms") != 0) return false;
-
-    /* printf("  Passed 2nd token\n"); */
-    /* printf("  dirname = %s ; name_tok = %s\n", dirname, name_tok); */
 
     /* continue getting the 3rd token */
     name_tok = strtok(NULL, ".");
@@ -193,20 +179,14 @@ bool IsNewestRoomDir(char* dirname, time_t* current_newest) {
     /* if 3rd token does not exist, return false */
     if (!name_tok) return false;
 
-    /* printf("  dirname = %s ; name_tok = %s\n", dirname, name_tok); */
-
     int i, tok_len = strlen(name_tok);
 
     /* if 3rd token contains a non-digit character, return false */
     for (i = 0; i < tok_len; i++)
         if (!isdigit(name_tok[i])) return false;
 
-    /* printf("  Passed 3rd token\n"); */
-
     /* if there are more than 3 tokens, return false */
     if (strtok(NULL, ".")) return false;
-
-    /* printf("  Passed name conditions\n"); */
 
     /* if pass all tests above,  dirname  is the name of a room directory
      * now check if this directory's time of last modified is greater than the
@@ -214,9 +194,6 @@ bool IsNewestRoomDir(char* dirname, time_t* current_newest) {
      */
     if ((double)difftime(st.st_mtime, *current_newest) > 0) {
         *current_newest = st.st_mtime;
-
-        /* printf("  Passed all tests. Current newest = %f\n", */
-        /*        (double)*current_newest); */
         return true;
     } else {
         return false;
@@ -247,7 +224,6 @@ void ReadRoomsFromDir(char* dirname, Room* rooms) {
     if (!root_dir) return;
 
     /* run through all entries of the directory */
-    int room_idx = 0;
     int num_rooms = 0;
     while ((entry = readdir(root_dir))) {
         /* construct a path to the entry */
@@ -256,15 +232,11 @@ void ReadRoomsFromDir(char* dirname, Room* rooms) {
         strcat(roomfile_path, entry->d_name);
 
         /* if this entry is is a regular file, it is a room file */
-        if (stat(roomfile_path, &st) == 0 && S_ISREG(st.st_mode)) {
-            ReadRoomFromFile(roomfile_path, rooms, &num_rooms, &room_idx);
-        }
+        if (stat(roomfile_path, &st) == 0 && S_ISREG(st.st_mode))
+            ReadRoomFromFile(roomfile_path, rooms, &num_rooms);
     }
 
     closedir(root_dir);
-
-    /* printf("ROOMS READ FROM DIRECTORY ARE:\n"); */
-    /* PrintRooms(rooms, NUM_ROOMS); */
 }
 
 /**
@@ -274,32 +246,29 @@ void ReadRoomsFromDir(char* dirname, Room* rooms) {
  * Arguments:
  *   filepath  the complete path to the file
  *   rooms     an array of Room structures to hold  NUM_ROOMS  parsed rooms
- *   idx       the index of the latest room in the  rooms  array
+ *   size      the current size of the  rooms  array.
  *
  * Room file format:
  * ROOM NAME: <room name>
  * CONNECTION 1: <room name>
- * ...
+ * <...>
  * ROOM TYPE: <room type>
  *
- * rooms  and  idx  will be modified to hold the parsed rooms from the room
- * files.
+ * rooms  and  size  will be modified to hold the parsed rooms from the room
+ * files and to hold the size of the  rooms  array (respectively).
  */
-void ReadRoomFromFile(char* filepath, Room* rooms, int* size, int* idx) {
-    assert(filepath && rooms && idx);
+void ReadRoomFromFile(char* filepath, Room* rooms, int* size) {
+    assert(filepath && rooms);
 
     FILE* roomfile = fopen(filepath, "r");
 
     if (!roomfile) return;
 
-    /* printf("ROOM FILE PATH: %s\n", filepath); */
     Room* current_room = NULL;
     char line[MAX_DIRNAME_LEN];
 
     /* read the file line by line */
     while (fgets(line, sizeof(line), roomfile)) {
-        /* printf("  Line = %s", line); */
-
         /* tokenize the line by whitespace */
         strtok(line, " ");  /* 1st token -> ignore */
         char* line_tok2 = strtok(NULL, " ");  /* 2nd token */
@@ -364,13 +333,6 @@ void ReadRoomFromFile(char* filepath, Room* rooms, int* size, int* idx) {
             current_room->num_outbounds++;
         }
     }
-
-    /* printf("\n  Current room's name = %s\n", current_room->name); */
-    /* int j; */
-    /* for (j = 0; j < current_room->num_outbounds; j++) { */
-    /*     printf("  Current room's connection %d: %s\n", j + 1, current_room->outbounds[j]->name); */
-    /* } */
-    /* printf("  Current room's type = %d\n", current_room->type); */
 
     fclose(roomfile);
 }
@@ -586,30 +548,3 @@ void DeleteDynIntArr(DynIntArr* arr) {
     arr->size = 0;
     arr->capacity = 0;
 }
-
-/**
- * Print the contents of all rooms in the  rooms  array of size  size  to the
- * terminal.
- */
-/*
-void PrintRooms(Room* rooms, int size) {
-    assert(rooms);
-
-    int i, j;
-    for (i = 0; i < size; i++) {
-        printf("rooms[%d]:\n", i);
-        printf("  name: %s\n", rooms[i].name);
-        for (j = 0; j < rooms[i].num_outbounds; j++) {
-            printf("  connection %d: %s\n", j + 1, rooms[i].outbounds[j]->name);
-        }
-        printf("  type: ");
-        if (rooms[i].type == MID_ROOM) {
-            printf("MID_ROOM\n");
-        } else if (rooms[i].type == START_ROOM) {
-            printf("START_ROOM\n");
-        } else {
-            printf("END_ROOM\n");
-        }
-    }
-}
-*/

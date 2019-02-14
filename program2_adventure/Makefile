@@ -11,7 +11,7 @@ luuph.buildrooms: luuph.buildrooms.c
 luuph.adventure: luuph.adventure.c
 	$(CC) $(CFLAGS) -lpthread $? -o $@
 
-.PHONY: clean cleanall
+.PHONY: clean
 
 clean:
 	rm -f $(ALL)
