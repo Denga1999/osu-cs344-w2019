@@ -51,33 +51,56 @@ typedef struct DynamicIntArray {
     int capacity;
 } DynIntArr;
 
+void InitRooms(Room* rooms, int size);
 void GetNewestRoomDir(char* dirname);
 bool IsNewestRoomDir(char* dirname, time_t* current_newest);
 void ReadRoomsFromDir(char* dirname, Room* rooms);
+void ReadRoomFromFile(char* filepath, Room* rooms, int* size, int* idx);
 void PlayGame(Room* rooms);
 int GetUserInput(Room* rooms, int index);
-int FindRoomByName(Room* rooms, char* name);
-int FindStartRoomIndex(Room* rooms);
+int FindRoomByName(Room* rooms, int size, char* name);
+int FindStartRoomIndex(Room* rooms, int size);
 void InitDynIntArr(DynIntArr* arr, int capacity);
 void PushBackDynIntArr(DynIntArr* arr, int value);
 void DeleteDynIntArr(DynIntArr* arr);
+void PrintRooms(Room* rooms, int size);
 
 int main(void) {
     /* find the newest room directory */
     char room_dirname[MAX_DIRNAME_LEN];
     GetNewestRoomDir(room_dirname);
 
-    printf("%s\n", room_dirname);
-
-    return 0;
-
     /* read the rooms in the directory into the  rooms  array */
     Room rooms[NUM_ROOMS];
+    InitRooms(rooms, NUM_ROOMS);
     ReadRoomsFromDir(room_dirname, rooms);
 
     PlayGame(rooms);
 
     return 0;
+}
+
+/**
+ * Initializes all rooms inside the  rooms  array of size  size  to default
+ * values.
+ *
+ * The  rooms  array will be modified after this function returns.
+ */
+void InitRooms(Room* rooms, int size) {
+    assert(rooms);
+
+    int i, j;
+    for (i = 0; i < size; i++) {
+        /* init name */
+        for (j = 0; j < MAX_NAME_LEN; j++) rooms[i].name[j] = '\0';
+
+        /* init outbounds */
+        for (j = 0; j < MAX_OUTBOUNDS; j++) rooms[i].outbounds[j] = NULL;
+        rooms[i].num_outbounds = 0;
+
+        /* init type. There's no default type, so put in a dummy one */
+        rooms[i].type = MID_ROOM;
+    }
 }
 
 /**
@@ -126,6 +149,8 @@ void GetNewestRoomDir(char* dirname) {
  * will be updated.
  */
 bool IsNewestRoomDir(char* dirname, time_t* current_newest) {
+    assert(dirname && current_newest);
+
     /* printf("  Current newest = %f\n", (double)*current_newest); */
 
     /* get statistics about this directory */
@@ -210,7 +235,156 @@ bool IsNewestRoomDir(char* dirname, time_t* current_newest) {
 void ReadRoomsFromDir(char* dirname, Room* rooms) {
     assert(dirname && rooms);
 
-    /* TODO */
+    struct dirent* entry;
+    struct stat st;
+    char roomfile_path[MAX_DIRNAME_LEN * 2];
+
+    /* open the  dirname  directory */
+    DIR* root_dir = opendir(dirname);
+
+    /* do nothing if directory cannot be read */
+    if (!root_dir) return;
+
+    /* run through all entries of the directory */
+    int room_idx = 0;
+    int num_rooms = 0;
+    while ((entry = readdir(root_dir))) {
+        /* construct a path to the entry */
+        strcpy(roomfile_path, dirname);
+        strcat(roomfile_path, "/");
+        strcat(roomfile_path, entry->d_name);
+
+        /* if this entry is is a regular file, it is a room file */
+        if (stat(roomfile_path, &st) == 0 && S_ISREG(st.st_mode)) {
+            ReadRoomFromFile(roomfile_path, rooms, &num_rooms, &room_idx);
+        }
+    }
+
+    closedir(root_dir);
+
+    printf("ROOMS READ FROM DIRECTORY ARE:\n");
+    PrintRooms(rooms, NUM_ROOMS);
+}
+
+/**
+ * Reads a room file in the provided  filepath  and parses the room's info
+ * into the  rooms  array.
+ *
+ * Arguments:
+ *   filepath  the complete path to the file
+ *   rooms     an array of Room structures to hold  NUM_ROOMS  parsed rooms
+ *   idx       the index of the latest room in the  rooms  array
+ *
+ * Room file format:
+ * ROOM NAME: <room name>
+ * CONNECTION 1: <room name>
+ * ...
+ * ROOM TYPE: <room type>
+ *
+ * rooms  and  idx  will be modified to hold the parsed rooms from the room
+ * files.
+ */
+void ReadRoomFromFile(char* filepath, Room* rooms, int* size, int* idx) {
+    assert(filepath && rooms && idx);
+
+    FILE* roomfile = fopen(filepath, "r");
+
+    if (!roomfile) return;
+
+    printf("ROOM FILE PATH: %s\n", filepath);
+    Room* current_room = NULL;
+    char line[MAX_DIRNAME_LEN];
+
+    /* read the file line by line */
+    while (fgets(line, sizeof(line), roomfile)) {
+        printf("    Line = %s", line);
+
+        /* tokenize the line by whitespace */
+        strtok(line, " ");  /* 1st token -> ignore */
+        char* line_tok2 = strtok(NULL, " ");  /* 2nd token */
+        char* line_tok3 = strtok(NULL, " ");  /* 3rd token */
+
+        /* trim trailing colon off the 2nd token */
+        line_tok2[strlen(line_tok2) - 1] = '\0';
+        /* trim trailing EOL off the 3rd token */
+        line_tok3[strlen(line_tok3) - 1] = '\0';
+
+        /* read room information */
+        if (strcmp(line_tok2, "NAME") == 0) {
+            /* try to find the room with this name first */
+            int room_idx = FindRoomByName(rooms, *size, line_tok3);
+
+            /* if the room does not exist, this is a new room */
+            if (room_idx == -1) {
+                current_room = &rooms[*size];
+                (*size)++;
+            } else {
+                current_room = &rooms[room_idx];
+            }
+
+            strcpy(current_room->name, line_tok3);
+        } else if (strcmp(line_tok2, "TYPE") == 0) {
+            /* room name is always the first to be read, so there must always be
+             * a "current room" after that */
+            assert(current_room);
+            
+            if (strcmp(line_tok3, "MID_ROOM") == 0) {
+                current_room->type = MID_ROOM;
+            } else if (strcmp(line_tok3, "START_ROOM") == 0) {
+                current_room->type = START_ROOM;
+            } else {
+                current_room->type = END_ROOM;
+            }
+        } else {  /* not name & not type -> this is a connection */
+            /* room name is always the first to be read, so there must always be
+             * a "current room" after that */
+            assert(current_room);
+
+            int outbound_arr_idx = atoi(line_tok2) - 1;
+
+            /* find the room with the same name as the connection name */
+            int outbound_idx = FindRoomByName(rooms, *size, line_tok3);
+
+            /* if this outbound target room does not exist, create one */
+            if (outbound_idx == -1) {
+                strcpy(rooms[*size].name, line_tok3);
+
+                /* point the outbound of the current room to this new room */
+                current_room->outbounds[outbound_arr_idx] = &rooms[*size];
+
+                /* increase size */
+                (*size)++;
+            } else {
+                /* if the outbound target exists, point to it */
+                current_room->outbounds[outbound_arr_idx] = &rooms[outbound_idx];
+            }
+
+            /* increase the number of outbounds */
+            current_room->num_outbounds++;
+        }
+    }
+
+    printf("\n    Current room's name = %s\n", current_room->name);
+    int j;
+    for (j = 0; j < current_room->num_outbounds; j++) {
+        printf("    Current room's connection %d: %s\n", j + 1, current_room->outbounds[j]->name);
+    }
+    printf("    Current room's type = %d\n", current_room->type);
+    
+
+    /* printf("    Read into rooms[%d].name = %s\n", *idx, rooms[*idx].name); */
+    /* unsigned int i; */
+    /* for (i = 0; i < strlen(rooms[*idx].name); i++) { */
+    /*     printf("%d: ", i); */
+    /*     if (isalpha(rooms[*idx].name[i])) { */
+    /*         printf("%c", rooms[*idx].name[i]); */
+    /*     } else if (rooms[*idx].name[i] == '\n') { */
+    /*         printf("\\n"); */
+    /*     } */
+    /*     printf("\n"); */
+    /* } */
+
+    fclose(roomfile);
 }
 
 /**
@@ -225,7 +399,7 @@ void PlayGame(Room* rooms) {
     assert(rooms);
 
     /* start at  START_ROOM */
-    int room_idx = FindStartRoomIndex(rooms);  /* hold current room's index */
+    int room_idx = FindStartRoomIndex(rooms, NUM_ROOMS);  /* current room */
     int next_room_idx;  /* hold user-input next room name */
 
     /* keep track of the room index path
@@ -300,19 +474,19 @@ int GetUserInput(Room* rooms, int index) {
     char name_input[MAX_NAME_LEN];
     fgets(name_input, MAX_NAME_LEN, stdin);
 
-    return FindRoomByName(rooms, name_input);
+    return FindRoomByName(rooms, NUM_ROOMS, name_input);
 }
 
 /**
  * Returns the index of the room with matched  name  in the  rooms  array.
  * Returns -1 if not found the room whose name is  name .
  */
-int FindRoomByName(Room* rooms, char* name) {
+int FindRoomByName(Room* rooms, int size, char* name) {
     assert(rooms && name);
 
     /* search through all the rooms */
     int i;
-    for (i = 0; i < NUM_ROOMS; i++)
+    for (i = 0; i < size; i++)
         if (strcmp(rooms[i].name, name) == 0) return i;
 
     /* return -1 if no name matches */
@@ -323,12 +497,12 @@ int FindRoomByName(Room* rooms, char* name) {
  * Returns the index of the room with  START_ROOM  type in the  rooms  array.
  * Returns -1 if not found the  START_ROOM  (fail-safe).
  */
-int FindStartRoomIndex(Room* rooms) {
+int FindStartRoomIndex(Room* rooms, int size) {
     assert(rooms);
 
     /* search through all the rooms */
     int i;
-    for (i = 0; i < NUM_ROOMS; i++)
+    for (i = 0; i < size; i++)
         if (rooms[i].type == START_ROOM) return i;
 
     /* return -1 if no starting room (fail-safe -- not supposed to happen) */
@@ -405,4 +579,29 @@ void DeleteDynIntArr(DynIntArr* arr) {
     free(arr->values);
     arr->size = 0;
     arr->capacity = 0;
+}
+
+/**
+ * Print the contents of all rooms in the  rooms  array of size  size  to the
+ * terminal.
+ */
+void PrintRooms(Room* rooms, int size) {
+    assert(rooms);
+
+    int i, j;
+    for (i = 0; i < size; i++) {
+        printf("rooms[%d]:\n", i);
+        printf("  name: %s\n", rooms[i].name);
+        for (j = 0; j < rooms[i].num_outbounds; j++) {
+            printf("  connection %d: %s\n", j + 1, rooms[i].outbounds[j]->name);
+        }
+        printf("  type: ");
+        if (rooms[i].type == MID_ROOM) {
+            printf("MID_ROOM\n");
+        } else if (rooms[i].type == START_ROOM) {
+            printf("START_ROOM\n");
+        } else {
+            printf("END_ROOM\n");
+        }
+    }
 }
