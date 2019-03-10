@@ -1,0 +1,101 @@
+#!/bin/bash
+#
+# compileall
+#
+# Phi Luu
+#
+# Oregon State University
+# CS_344_001_W2019 Operating Systems 1
+# Program 4: OTP
+#
+# This is the compilation script for the 5 OTP programs.
+#
+# In order for this script to be executable, give it an execute permission, as
+# follows:
+#
+#   chmod 755 compileall
+#
+# To compile all C programs in this directory, each of which is contained in a
+# single  .c  source file, simply run
+#
+#   ./compileall
+#
+# To compile a C program named  program_name  contained in one single source
+# file named  program_name.c , run
+#
+#   ./compileall program_name
+#
+# Notes: Compilation of programs with multiple source files and headers files
+# is not supported. Languages other than C are not supported.
+#
+# To clean the directory of executables, run
+#
+#   ./compileall clean
+
+# ensure there is at most 1 command-line arg
+if [[ "$#" -gt 1 ]]; then
+  echo 'Usage:' >&2
+  echo '  ./compileall' >&2
+  echo '  ./compileall program_name' >&2
+  echo '  ./compileall clean' >&2
+  exit 1
+fi
+
+CC='gcc'
+CFLAGS='-std=c99 -g -Wall'
+
+SRC=''
+for source_file in *.c; do
+  # build a list of source files in current directory
+  if [[ -z "${SRC}" ]]; then
+    SRC="${source_file}"
+  else
+    SRC="${SRC} ${source_file}"
+  fi
+done
+
+# Takes in a  .c  source file's name and tries compiling the program using the
+# specified compiler and flags above
+#
+# SYNOPSIS
+#   compile PROGRAM
+#
+# ARGUMENTS
+#   PROGRAM  full name of a C source file, excluding the extension
+#
+# RETURNS
+#   None
+compile() {
+  # ensure valid arguments
+  if [[ "$#" -ne 1 ]]; then
+    exit 1
+  fi
+
+  # try compiling the program
+  echo "${CC} ${CFLAGS} $1.c -o $1"
+  ${CC} ${CFLAGS} $1.c -o $1 && chmod 755 $1
+}
+
+if [[ "$#" -eq 0 ]]; then
+  # no argument, compile all single-source-file C programs in this directory
+  for source_file in ${SRC}; do
+    compile "${source_file%.*}"
+  done
+elif [[ "$1" == 'clean' ]]; then
+  # arg clean, remove all executables with the same names as C source files
+  EXE=''
+  for source_file in ${SRC}; do
+    # build a list if executable files in current directory
+    if [[ -z "${EXE}" ]]; then
+      EXE="${source_file%.*}"
+    else
+      EXE="${EXE} ${source_file%.*}"
+    fi
+  done
+
+  echo "rm -f ${EXE}"
+  rm -f ${EXE}
+else
+  # arg program's name, try to compile the program with this given name
+  compile "$1"
+fi
