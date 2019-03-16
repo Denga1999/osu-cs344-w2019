@@ -20,10 +20,10 @@
 #
 #   ./compileall
 #
-# To compile a C program named  program_name  contained in one single source
-# file named  program_name.c , run
+# To compile a list of C programs, each of which contained in one single source
+# file, run
 #
-#   ./compileall program_name
+#   ./compileall program1 program2 ... programN
 #
 # Notes: Compilation of programs with multiple source files and headers files
 # is not supported. Languages other than C are not supported.
@@ -31,15 +31,6 @@
 # To clean the directory of executables, run
 #
 #   ./compileall clean
-
-# ensure there is at most 1 command-line arg
-if [[ "$#" -gt 1 ]]; then
-  echo 'Usage:' >&2
-  echo '  ./compileall' >&2
-  echo '  ./compileall program_name' >&2
-  echo '  ./compileall clean' >&2
-  exit 1
-fi
 
 CC='gcc'
 CFLAGS='-std=c99 -g -Wall'
@@ -54,26 +45,23 @@ for source_file in *.c; do
   fi
 done
 
-# Takes in a  .c  source file's name and tries compiling the program using the
-# specified compiler and flags above
+# Takes a list of a  .c  source file's names and tries compiling the program
+# using the specified compiler and flags above.
 #
 # SYNOPSIS
-#   compile PROGRAM
+#   compile PROGRAM1 PROGRAM2 ... PROGRAMn
 #
 # ARGUMENTS
-#   PROGRAM  full name of a C source file, excluding the extension
+#   PROGRAMi  full name of a C source file, excluding the extension
 #
 # RETURNS
 #   None
 compile() {
-  # ensure valid arguments
-  if [[ "$#" -ne 1 ]]; then
-    exit 1
-  fi
-
   # try compiling the program
-  echo "${CC} ${CFLAGS} $1.c -o $1"
-  ${CC} ${CFLAGS} $1.c -o $1 && chmod 755 $1
+  for program in "$@"; do
+    echo "${CC} ${CFLAGS} ${program}.c -o ${program}"
+    ${CC} ${CFLAGS} ${program}.c -o ${program} && chmod 755 ${program}
+  done
 }
 
 if [[ "$#" -eq 0 ]]; then
@@ -81,7 +69,7 @@ if [[ "$#" -eq 0 ]]; then
   for source_file in ${SRC}; do
     compile "${source_file%.*}"
   done
-elif [[ "$1" == 'clean' ]]; then
+elif [[ "$#" -eq 1 ]] && [[ "$1" == 'clean' ]]; then
   # arg clean, remove all executables with the same names as C source files
   EXE=''
   for source_file in ${SRC}; do
@@ -96,6 +84,6 @@ elif [[ "$1" == 'clean' ]]; then
   echo "rm -f ${EXE}"
   rm -f ${EXE}
 else
-  # arg program's name, try to compile the program with this given name
-  compile "$1"
+  # arg a list of program names, try to compile these programs
+  compile "${@:1}"
 fi
