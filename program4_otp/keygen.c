@@ -27,9 +27,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <ctype.h>
+#include <string.h>
 
 #define RAND_RANGE     (char)27  // 26 capital alphabet letters + 1 space
 #define SPACE_RAND_IDX (char)(RAND_RANGE - 1)  // 0-25 for letters, 26 for space
+
+int ToPositiveInt(char* str);
 
 int main(int argc, char** argv) {
     // ensure correct usage of command line arguments
@@ -41,10 +45,10 @@ int main(int argc, char** argv) {
     // try convert 1st arg from string to int
     // atoi()  returns 0 on non-numeric string, but in this case  keylength
     // must be positive. So, if the return value is not positive, exit
-    int keylength = atoi(argv[1]);
-    if (keylength <= 0) {
-        fprintf(stderr, "Usage: ./keygen keylength\n");
-        fprintf(stderr, " keylength  must be a positive integer\n");
+    int keylength = ToPositiveInt(argv[1]);
+    if (!keylength) {
+        fprintf(stderr, "Usage: ./keygen keylength\n"
+                        "  keylength  must be a positive integer\n");
         return 1;
     }
 
@@ -69,4 +73,20 @@ int main(int argc, char** argv) {
     printf("\n");
 
     return 0;
+}
+
+// Converts a string to a positive integer. If any character of the string is
+// not a digit, return -1 as an error.
+//
+// Argument:
+//   str  the string to be converted into a positive integer
+//
+// Returns:
+//   0  if there exists a non-digit (not in 0-9) character in  str  string
+//   The correspond positive integer on success
+int ToPositiveInt(char* str) {
+    for (size_t i = 0, size = strlen(str); i < size; i++)
+        if (!isdigit(str[i])) return 0;
+
+    return atoi(str);
 }
