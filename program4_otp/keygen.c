@@ -29,16 +29,17 @@
 #include <time.h>
 #include <ctype.h>
 #include <string.h>
+#include <assert.h>
 
 #define RAND_RANGE     (char)27  // 26 capital alphabet letters + 1 space
 #define SPACE_RAND_IDX (char)(RAND_RANGE - 1)  // 0-25 for letters, 26 for space
 
-int ToPositiveInt(char* str);
+int ToPositiveInt(const char* str);
 
 int main(int argc, char** argv) {
     // ensure correct usage of command line arguments
     if (argc != 2) {
-        fprintf(stderr, "Usage: ./keygen keylength\n");
+        fprintf(stderr, "Usage: %s keylength\n", argv[0]);
         return 1;
     }
 
@@ -47,8 +48,7 @@ int main(int argc, char** argv) {
     // must be positive. So, if the return value is not positive, exit
     int keylength = ToPositiveInt(argv[1]);
     if (!keylength) {
-        fprintf(stderr, "Usage: ./keygen keylength\n"
-                        "  keylength  must be a positive integer\n");
+        fprintf(stderr, "%s:  keylength  must be a positive integer\n", argv[0]);
         return 1;
     }
 
@@ -84,7 +84,9 @@ int main(int argc, char** argv) {
 // Returns:
 //   0  if there exists a non-digit (not in 0-9) character in  str  string
 //   The correspond positive integer on success
-int ToPositiveInt(char* str) {
+int ToPositiveInt(const char* str) {
+    assert(str);
+
     for (size_t i = 0, size = strlen(str); i < size; i++)
         if (!isdigit(str[i])) return 0;
 
