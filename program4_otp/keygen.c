@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
 int ToPositiveInt(const char* str) {
     assert(str);
 
-    for (size_t i = 0, size = strlen(str); i < size; i++)
+    for (size_t i = 0, len = strlen(str); i < len; i++)
         if (!isdigit(str[i])) return 0;
 
     return atoi(str);
