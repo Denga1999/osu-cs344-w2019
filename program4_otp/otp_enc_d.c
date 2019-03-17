@@ -41,15 +41,20 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <assert.h>
+#include <pthread.h>
 
-#define MAX_BUFFER_SIZE        (size_t)70000
+#define MAX_BUFFER_SIZE (size_t)100000
 #define MAX_LISTEN_CONNECTIONS (int)5
+#define MAX_CONCURRENCY (int)5
+#define CHAR_RANGE (int)27  // 26 capital alphabet letters + 1 space
+
+static const char* CHAR_POOL = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
 
 static char* prog;  // executable's name, for convenience
 
-void EncryptOtp(char* cyphertext, const char* plaintext, const char* key);
-void ReadFromClient(int socket_fd, char* buffer, size_t len, int flags);
-void WriteToClient(int socket_fd, const char* buffer, size_t len, int flags);
+void EncryptOtp(char* ciphertext, const char* plaintext, const char* key);
+void ReadFromClient(int socket_fd, void* buffer, size_t len, int flags);
+void WriteToClient(int socket_fd, void* buffer, size_t len, int flags);
 int ToPositiveInt(const char* str);
 
 int main(int argc, char** argv) {
@@ -96,58 +101,101 @@ int main(int argc, char** argv) {
     // flip the socket on and start listening
     listen(socket_fd, MAX_LISTEN_CONNECTIONS);
 
-    // accept a connection, blocking if one is not available until one connects
-    struct sockaddr_in client_address;
-    socklen_t client_info_size = sizeof(client_address);
-    int connection_fd = accept(socket_fd, (struct sockaddr*)&client_address,
-                               &client_info_size);
-    if (connection_fd < 0)
-        fprintf(stderr, "%s: accept() error\n", prog);
+    // listen for client's connection forever
+    while (1) {
+        // accept a connection, blocking if one is not available until one connects
+        struct sockaddr_in client_address;
+        socklen_t client_info_size = sizeof(client_address);
+        int connection_fd = accept(socket_fd, (struct sockaddr*)&client_address,
+                                   &client_info_size);
+        if (connection_fd < 0)
+            fprintf(stderr, "%s: accept() error\n", prog);
 
-    // read "KEY\nPLAINTEXT" combination from client (i.e otp_enc)
-    char client_buffer[MAX_BUFFER_SIZE * 2 + 2];  // +2 for \n and \0
-    memset(client_buffer, '\0', sizeof(client_buffer));
-    ReadFromClient(connection_fd, client_buffer, sizeof(client_buffer) - 1, 0);
+        /* printf("%s: Server connected to client at port %d\n", prog, */
+        /*        ntohs(client_address.sin_port)); */
 
-    // get plaintext
-    char* plaintext = NULL;
-    char* tmp = strtok(client_buffer, "\n");
-    if (tmp) {
-        plaintext = malloc((strlen(tmp) + 1) * sizeof(*plaintext));
-        assert(plaintext);
-        strcpy(plaintext, tmp);
+        // first read from client how much data is going to be sent over
+        size_t client_data_len = 0;
+        ReadFromClient(connection_fd, &client_data_len, sizeof(client_data_len), 0);
+
+        printf("%s: Going to receive %zu characters from client\n",
+               prog, client_data_len);
+
+        // then read "KEY\nPLAINTEXT" combination from client (i.e otp_enc)
+        char client_data[client_data_len + 1];  // +1 for \0
+        memset(client_data, '\0', sizeof(client_data));
+        ReadFromClient(connection_fd, client_data, client_data_len, 0);
+
+        /* printf("%s: client_data = \"%s\", size = %zu\n", */
+        /*        prog, client_data, strlen(client_data)); */
+
+        // get plaintext
+        char plaintext[MAX_BUFFER_SIZE];
+        memset(plaintext, '\0', sizeof(plaintext));
+        char* tmp = strtok(client_data, "\n");
+        if (tmp) strcpy(plaintext, tmp);
+
+        // get key
+        char key[MAX_BUFFER_SIZE];
+        memset(key, '\0', sizeof(key));
+        tmp = strtok(NULL, "\n");
+        if (tmp) strcpy(key, tmp);
+
+        FILE* tmpf = fopen("test_plaintext_otp_enc_d", "w");
+        fprintf(tmpf, "%s\n", plaintext);
+        fclose(tmpf);
+        tmpf = fopen("test_key_otp_enc_d", "w");
+        fprintf(tmpf, "%s\n", key);
+        fclose(tmpf);
+
+        /* // TODO: Multithread the encryption process */
+        /* char ciphertext[MAX_BUFFER_SIZE]; */
+        /* memset(ciphertext, '\0', sizeof(ciphertext)); */
+        /* EncryptOtp(ciphertext, plaintext, key); */
+        /*  */
+        /* // send the ciphertext back to the client */
+        /* WriteToClient(connection_fd, ciphertext, strlen(ciphertext), 0); */
+
+        // close the existing socket which is connected to client
+        close(connection_fd);
     }
 
-    // get key
-    char* key = NULL;
-    tmp = strtok(NULL, "\n");
-    if (tmp) {
-        key = malloc((strlen(tmp) + 1) * sizeof(*key));
-        assert(key);
-        strcpy(key, tmp);
-    }
-
-    // DEBUG
-    printf("%s: Plaintext = \"%s\"\n", prog, plaintext);
-    printf("%s: Key = \"%s\"\n", prog, key);
-
-    /* // TODO: Encrypt the plaintext using the key */
-    /* char cyphertext[MAX_BUFFER_SIZE]; */
-    /* memset(cyphertext, '\0', sizeof(cyphertext)); */
-
-    /* // send the cyphertext back to the client */
-    /* WriteToClient(connection_fd, "This is from server\n", 20, 0); */
-
-    // clean up heap memory
-    if (plaintext) free(plaintext);
-    if (key) free(key);
-
-    // close the existing socket which is connected to client
-    close(connection_fd);
     // close the listening socket
     close(socket_fd);
 
     return 0;
+}
+
+// Creates a one-time pad by encrypting a given plaintext using a provided key
+// using modular addition.
+//
+// Arguments:
+//   ciphertext  output of this function, i.e. the encrypted text
+//   plaintext   plaintext to be encrypted
+//   key         key used in the encryption process
+//
+// ciphertext  will be modified and will contain the encrypted text.
+void EncryptOtp(char* ciphertext, const char* plaintext, const char* key) {
+    assert(ciphertext && plaintext && key);
+
+    // get lengths of plaintext and key and ensure
+    // key is at least as long as plaintext
+    size_t plaintext_len = strlen(plaintext);
+    size_t key_len = strlen(key);
+    assert(key_len >= plaintext_len);
+
+    // for each character in plaintext, convert it to ciphertext
+    for (size_t i = 0; i < plaintext_len; i++) {
+        // use modular addition to get the index of ciphertext
+        // strchr() returns a  char*  to the first occurrence of the character,
+        // subtract  CHAR_POOL  from that will give the index
+        // since  CHAR_POOL  is an array of character
+        int cipher_idx = strchr(CHAR_POOL, plaintext[i]) - CHAR_POOL;
+        cipher_idx += strchr(CHAR_POOL, key[i]) - CHAR_POOL;
+        cipher_idx %= CHAR_RANGE;
+
+        ciphertext[i] = CHAR_POOL[cipher_idx];
+    }
 }
 
 // Reads data from client to a buffer with the provided socket and flags.
@@ -160,15 +208,31 @@ int main(int argc, char** argv) {
 //
 // If the data cannot be read from the client, the function will print error
 // messages accordingly and then terminate the program with code 1.
-void ReadFromClient(int socket_fd, char* buffer, size_t len, int flags) {
+void ReadFromClient(int socket_fd, void* buffer, size_t len, int flags) {
     assert(socket_fd >= 0 && buffer && len > 0 && flags >= 0);
 
-    ssize_t chars_read = recv(socket_fd, buffer, len, flags);
-    if (chars_read < 0) {
-        fprintf(stderr, "%s: recv() error: Could not read from socket\n", prog);
-    /* } else if (chars_read < len) { */
-    /*     fprintf(stderr, "%s: recv() warning: Not all data was read from socket\n", */
-    /*             prog); */
+    void* tmp_buffer = buffer;
+    ssize_t total_chars_read = 0;
+
+    // keep receiving until all of the data has been read
+    while (total_chars_read < len) {
+        ssize_t chars_read = recv(socket_fd, tmp_buffer,
+                                  len - total_chars_read, flags);
+        if (chars_read < 0) {
+            fprintf(stderr, "%s: recv() error: Could not read from socket\n", prog);
+            break;
+        }
+
+        total_chars_read += chars_read;
+
+        printf("%s: recv(): Read %zu. Total read %zu. Remaining %zu\n", prog,
+               chars_read, total_chars_read, len - total_chars_read);
+
+        if (total_chars_read < len) {
+            // move pointer to after the last read character
+            tmp_buffer += chars_read;
+            fprintf(stderr, "%s: recv() warning: Not all data was read from socket\n", prog);
+        }
     }
 }
 
@@ -182,15 +246,31 @@ void ReadFromClient(int socket_fd, char* buffer, size_t len, int flags) {
 //
 // If the data cannot be written to the client, the function will print error
 // messages accordingly and then terminate the program with code 1.
-void WriteToClient(int socket_fd, const char* buffer, size_t len, int flags) {
+void WriteToClient(int socket_fd, void* buffer, size_t len, int flags) {
     assert(socket_fd >= 0 && buffer && len > 0 && flags >= 0);
 
-    ssize_t chars_written = send(socket_fd, buffer, len, flags);
-    if (chars_written < 0) {
-        fprintf(stderr, "%s: send() error: Could not write to socket\n", prog);
-    } else if (chars_written < len) {
-        fprintf(stderr, "%s: send() warning: Not all data was written to socket\n",
-                prog);
+    void* tmp_buffer = buffer;
+    ssize_t total_chars_written = 0;
+
+    // keep sending until all of the data has been sent
+    while (total_chars_written < len) {
+        ssize_t chars_written = send(socket_fd, tmp_buffer,
+                                     len - total_chars_written, flags);
+        if (chars_written < 0) {
+            fprintf(stderr, "%s: send() error: Could not write to socket\n", prog);
+            break;
+        }
+
+        total_chars_written += chars_written;
+
+        printf("%s: recv(): Written %zu. Total written %zu. Remaining %zu\n", prog,
+               chars_written, total_chars_written, len - total_chars_written);
+
+        if (total_chars_written < len) {
+            // move pointer to after the last written character
+            tmp_buffer += chars_written;
+            fprintf(stderr, "%s: send() warning: Not all data was written to socket\n", prog);
+        }
     }
 }
 

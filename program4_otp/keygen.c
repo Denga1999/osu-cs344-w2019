@@ -31,8 +31,9 @@
 #include <string.h>
 #include <assert.h>
 
-#define RAND_RANGE     (char)27  // 26 capital alphabet letters + 1 space
-#define SPACE_RAND_IDX (char)(RAND_RANGE - 1)  // 0-25 for letters, 26 for space
+#define CHAR_RANGE (int)27  // 26 capital alphabet letters + 1 space
+
+static const char* CHAR_POOL = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
 
 int ToPositiveInt(const char* str);
 
@@ -57,16 +58,7 @@ int main(int argc, char** argv) {
 
     // create a random string character by character
     for (int i = 0; i < keylength; i++) {
-        // randomize an integer between [0, RAND_RANGE - 1]
-        char rand_idx = rand() % RAND_RANGE;
-
-        // if randomized to index used for space, output space
-        if (rand_idx == SPACE_RAND_IDX) {
-            printf(" ");
-        } else {
-            // otherwise (randomized to a capital letter), output that letter
-            printf("%c", 'A' + rand_idx);
-        }
+        printf("%c", CHAR_POOL[rand() % CHAR_RANGE]);
     }
 
     // end the key with a newline

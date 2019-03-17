@@ -35,13 +35,13 @@
 #include <assert.h>
 
 #define HOSTNAME        (char*)"localhost"
-#define MAX_BUFFER_SIZE (size_t)70000
+#define MAX_BUFFER_SIZE (size_t)100000
 
 static char* prog;  // executable's name, for convenience
 
 size_t ValidateAndReadFile(const char* fname, char* buffer, size_t size);
-void ReadFromServer(int socket_fd, char* buffer, size_t len, int flags);
-void WriteToServer(int socket_fd, const char* buffer, size_t len, int flags);
+void ReadFromServer(int socket_fd, void* buffer, size_t len, int flags);
+void WriteToServer(int socket_fd, void* buffer, size_t len, int flags);
 int ToPositiveInt(const char* str);
 
 int main(int argc, char** argv) {
@@ -112,17 +112,29 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // send plaintext and key to server (i.e otp_enc_d daemon)
-    WriteToServer(socket_fd, strcat(strcat(plaintext, "\n"), key),
-                  plaintext_len + 1 + key_len, 0);
+    // combine plaintext and key into one string, separated by a newline
+    char client_data[MAX_BUFFER_SIZE * 2 + 1];  // +1 for \n
+    memset(client_data, '\0', sizeof(client_data));
+    strcat(client_data, plaintext);
+    strcat(client_data, "\n");
+    strcat(client_data, key);
 
-    /* // wait for server to send back the cyphertext and read the data */
-    /* char cyphertext[plaintext_len + 1];  // +1 for \0 */
-    /* memset(cyphertext, '\0', sizeof(cyphertext)); */
-    /* ReadFromServer(socket_fd, cyphertext, sizeof(cyphertext) - 1, 0); */
+    /* printf("%s: Sending to server: \"%s\", size = %zu\n", */
+    /*        prog, client_data, strlen(client_data)); */
 
-    /* // print the cyphertext to stdout */
-    /* printf("%s\n", prog, cyphertext); */
+    // first tell server how much data is going to be sent
+    size_t client_data_len = strlen(client_data);
+    WriteToServer(socket_fd, &client_data_len, sizeof(client_data_len), 0);
+    // then send the combined string to server (i.e otp_enc_d daemon)
+    WriteToServer(socket_fd, client_data, client_data_len, 0);
+
+    /* // wait for server to send back the ciphertext and read the data */
+    /* char ciphertext[MAX_BUFFER_SIZE]; */
+    /* memset(ciphertext, '\0', sizeof(ciphertext)); */
+    /* ReadFromServer(socket_fd, ciphertext, sizeof(ciphertext) - 1, 0); */
+    /*  */
+    /* // print the ciphertext to stdout */
+    /* printf("%s\n", ciphertext); */
 
     // clean up
     close(socket_fd);
@@ -197,13 +209,31 @@ size_t ValidateAndReadFile(const char* fname, char* buffer, size_t size) {
 //
 // If the data cannot be read from the server, the function will print error
 // messages accordingly and then terminate the program with code 1.
-void ReadFromServer(int socket_fd, char* buffer, size_t len, int flags) {
+void ReadFromServer(int socket_fd, void* buffer, size_t len, int flags) {
     assert(socket_fd >= 0 && buffer && len > 0 && flags >= 0);
 
-    ssize_t chars_read = recv(socket_fd, buffer, len, flags);
-    if (chars_read < 0) {
-        fprintf(stderr, "%s: recv() error: Could not read from socket\n", prog);
-        exit(1);
+    void* tmp_buffer = buffer;
+    ssize_t total_chars_read = 0;
+
+    // keep receiving until all of the data has been read
+    while (total_chars_read < len) {
+        ssize_t chars_read = recv(socket_fd, tmp_buffer,
+                                  len - total_chars_read, flags);
+        if (chars_read < 0) {
+            fprintf(stderr, "%s: recv() error: Could not read from socket\n", prog);
+            break;
+        }
+
+        total_chars_read += chars_read;
+
+        printf("%s: recv(): Read %zu. Total read %zu. Remaining %zu\n", prog,
+               chars_read, total_chars_read, len - total_chars_read);
+
+        if (total_chars_read < len) {
+            // move pointer to after the last read character
+            tmp_buffer += chars_read;
+            fprintf(stderr, "%s: recv() warning: Not all data was read from socket\n", prog);
+        }
     }
 }
 
@@ -217,17 +247,31 @@ void ReadFromServer(int socket_fd, char* buffer, size_t len, int flags) {
 //
 // If the data cannot be written to the server, the function will print error
 // messages accordingly and then terminate the program with code 1.
-void WriteToServer(int socket_fd, const char* buffer, size_t len, int flags) {
+void WriteToServer(int socket_fd, void* buffer, size_t len, int flags) {
     assert(socket_fd >= 0 && buffer && len > 0 && flags >= 0);
 
-    ssize_t chars_written = send(socket_fd, buffer, len, flags);
-    if (chars_written < 0) {
-        fprintf(stderr, "%s: send() error: Could not write to socket\n", prog);
-        exit(1);
-    }
-    if (chars_written < len) {
-        fprintf(stderr, "%s: send() warning: Not all data was written to socket\n",
-                prog);
+    void* tmp_buffer = buffer;
+    ssize_t total_chars_written = 0;
+
+    // keep sending until all of the data has been sent
+    while (total_chars_written < len) {
+        ssize_t chars_written = send(socket_fd, tmp_buffer,
+                                     len - total_chars_written, flags);
+        if (chars_written < 0) {
+            fprintf(stderr, "%s: send() error: Could not write to socket\n", prog);
+            break;
+        }
+
+        total_chars_written += chars_written;
+
+        printf("%s: recv(): Written %zu. Total written %zu. Remaining %zu\n", prog,
+               chars_written, total_chars_written, len - total_chars_written);
+
+        if (total_chars_written < len) {
+            // move pointer to after the last written character
+            tmp_buffer += chars_written;
+            fprintf(stderr, "%s: send() warning: Not all data was written to socket\n", prog);
+        }
     }
 }
 
