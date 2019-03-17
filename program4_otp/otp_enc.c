@@ -122,19 +122,22 @@ int main(int argc, char** argv) {
     /* printf("%s: Sending to server: \"%s\", size = %zu\n", */
     /*        prog, client_data, strlen(client_data)); */
 
-    // first tell server how much data is going to be sent
+    // first tell server (i.e otp_enc_d) how much data is going to be sent
     size_t client_data_len = strlen(client_data);
     WriteToServer(socket_fd, &client_data_len, sizeof(client_data_len), 0);
-    // then send the combined string to server (i.e otp_enc_d daemon)
+    // then send the combined string to server
     WriteToServer(socket_fd, client_data, client_data_len, 0);
 
-    /* // wait for server to send back the ciphertext and read the data */
-    /* char ciphertext[MAX_BUFFER_SIZE]; */
-    /* memset(ciphertext, '\0', sizeof(ciphertext)); */
-    /* ReadFromServer(socket_fd, ciphertext, sizeof(ciphertext) - 1, 0); */
-    /*  */
-    /* // print the ciphertext to stdout */
-    /* printf("%s\n", ciphertext); */
+    // first read from server how much data is going to be sent
+    size_t server_data_len = 0;
+    ReadFromServer(socket_fd, &server_data_len, sizeof(server_data_len), 0);
+    // then read ciphertext from server
+    char ciphertext[server_data_len + 1];  // +1 for \0
+    memset(ciphertext, '\0', sizeof(ciphertext));
+    ReadFromServer(socket_fd, ciphertext, server_data_len, 0);
+
+    // print the ciphertext to stdout
+    printf("%s\n", ciphertext);
 
     // clean up
     close(socket_fd);
@@ -226,13 +229,13 @@ void ReadFromServer(int socket_fd, void* buffer, size_t len, int flags) {
 
         total_chars_read += chars_read;
 
-        printf("%s: recv(): Read %zu. Total read %zu. Remaining %zu\n", prog,
-               chars_read, total_chars_read, len - total_chars_read);
+        /* printf("%s: recv(): Read %zu. Total read %zu. Remaining %zu\n", prog, */
+        /*        chars_read, total_chars_read, len - total_chars_read); */
 
         if (total_chars_read < len) {
             // move pointer to after the last read character
             tmp_buffer += chars_read;
-            fprintf(stderr, "%s: recv() warning: Not all data was read from socket\n", prog);
+            /* fprintf(stderr, "%s: recv() warning: Not all data was read from socket\n", prog); */
         }
     }
 }
@@ -264,13 +267,13 @@ void WriteToServer(int socket_fd, void* buffer, size_t len, int flags) {
 
         total_chars_written += chars_written;
 
-        printf("%s: recv(): Written %zu. Total written %zu. Remaining %zu\n", prog,
-               chars_written, total_chars_written, len - total_chars_written);
+        /* printf("%s: recv(): Written %zu. Total written %zu. Remaining %zu\n", prog, */
+        /*        chars_written, total_chars_written, len - total_chars_written); */
 
         if (total_chars_written < len) {
             // move pointer to after the last written character
             tmp_buffer += chars_written;
-            fprintf(stderr, "%s: send() warning: Not all data was written to socket\n", prog);
+            /* fprintf(stderr, "%s: send() warning: Not all data was written to socket\n", prog); */
         }
     }
 }

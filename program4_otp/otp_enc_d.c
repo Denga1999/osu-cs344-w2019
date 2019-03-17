@@ -114,14 +114,10 @@ int main(int argc, char** argv) {
         /* printf("%s: Server connected to client at port %d\n", prog, */
         /*        ntohs(client_address.sin_port)); */
 
-        // first read from client how much data is going to be sent over
+        // first read from client (i.e. otp_enc) how much data is going to be sent
         size_t client_data_len = 0;
         ReadFromClient(connection_fd, &client_data_len, sizeof(client_data_len), 0);
-
-        printf("%s: Going to receive %zu characters from client\n",
-               prog, client_data_len);
-
-        // then read "KEY\nPLAINTEXT" combination from client (i.e otp_enc)
+        // then read "KEY\nPLAINTEXT" combination from client
         char client_data[client_data_len + 1];  // +1 for \0
         memset(client_data, '\0', sizeof(client_data));
         ReadFromClient(connection_fd, client_data, client_data_len, 0);
@@ -141,20 +137,23 @@ int main(int argc, char** argv) {
         tmp = strtok(NULL, "\n");
         if (tmp) strcpy(key, tmp);
 
-        FILE* tmpf = fopen("test_plaintext_otp_enc_d", "w");
-        fprintf(tmpf, "%s\n", plaintext);
-        fclose(tmpf);
-        tmpf = fopen("test_key_otp_enc_d", "w");
-        fprintf(tmpf, "%s\n", key);
-        fclose(tmpf);
+        /* FILE* tmpf = fopen("test_plaintext_otp_enc_d", "w"); */
+        /* fprintf(tmpf, "%s\n", plaintext); */
+        /* fclose(tmpf); */
+        /* tmpf = fopen("test_key_otp_enc_d", "w"); */
+        /* fprintf(tmpf, "%s\n", key); */
+        /* fclose(tmpf); */
 
-        /* // TODO: Multithread the encryption process */
-        /* char ciphertext[MAX_BUFFER_SIZE]; */
-        /* memset(ciphertext, '\0', sizeof(ciphertext)); */
-        /* EncryptOtp(ciphertext, plaintext, key); */
-        /*  */
-        /* // send the ciphertext back to the client */
-        /* WriteToClient(connection_fd, ciphertext, strlen(ciphertext), 0); */
+        // TODO: Multithread the encryption process
+        char ciphertext[MAX_BUFFER_SIZE];
+        memset(ciphertext, '\0', sizeof(ciphertext));
+        EncryptOtp(ciphertext, plaintext, key);
+
+        // first tell client how much data is going to be sent
+        size_t ciphertext_len = strlen(ciphertext);
+        WriteToClient(connection_fd, &ciphertext_len, sizeof(ciphertext_len), 0);
+        // then send the ciphertext to the client
+        WriteToClient(connection_fd, ciphertext, strlen(ciphertext), 0);
 
         // close the existing socket which is connected to client
         close(connection_fd);
@@ -225,13 +224,13 @@ void ReadFromClient(int socket_fd, void* buffer, size_t len, int flags) {
 
         total_chars_read += chars_read;
 
-        printf("%s: recv(): Read %zu. Total read %zu. Remaining %zu\n", prog,
-               chars_read, total_chars_read, len - total_chars_read);
+        /* printf("%s: recv(): Read %zu. Total read %zu. Remaining %zu\n", prog, */
+        /*        chars_read, total_chars_read, len - total_chars_read); */
 
         if (total_chars_read < len) {
             // move pointer to after the last read character
             tmp_buffer += chars_read;
-            fprintf(stderr, "%s: recv() warning: Not all data was read from socket\n", prog);
+            /* fprintf(stderr, "%s: recv() warning: Not all data was read from socket\n", prog); */
         }
     }
 }
@@ -263,13 +262,13 @@ void WriteToClient(int socket_fd, void* buffer, size_t len, int flags) {
 
         total_chars_written += chars_written;
 
-        printf("%s: recv(): Written %zu. Total written %zu. Remaining %zu\n", prog,
-               chars_written, total_chars_written, len - total_chars_written);
+        /* printf("%s: recv(): Written %zu. Total written %zu. Remaining %zu\n", prog, */
+        /*        chars_written, total_chars_written, len - total_chars_written); */
 
         if (total_chars_written < len) {
             // move pointer to after the last written character
             tmp_buffer += chars_written;
-            fprintf(stderr, "%s: send() warning: Not all data was written to socket\n", prog);
+            /* fprintf(stderr, "%s: send() warning: Not all data was written to socket\n", prog); */
         }
     }
 }
