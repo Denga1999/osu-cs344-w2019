@@ -45,14 +45,28 @@
 
 #define MAX_BUFFER_SIZE (size_t)100000
 #define MAX_LISTEN_CONNECTIONS (int)5
-#define MAX_CONCURRENCY (int)5
+#define MAX_THREADS (int)5
 #define CHAR_RANGE (int)27  // 26 capital alphabet letters + 1 space
+
+typedef struct OtpCharArr {
+    char* plaintext;
+    char* key;
+    char* ciphertext;
+} OtpCharArr;
+
+typedef struct OtpThread {
+    thread_t id;
+    OtpCharArr args;
+} OtpThread;
 
 static const char* CHAR_POOL = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
 
 static char* prog;  // executable's name, for convenience
 
+void* EncryptThreadMain(void* argument);
 void EncryptOtp(char* ciphertext, const char* plaintext, const char* key);
+void PushThreadArgs(OtpThread* threads, int size, OtpCharArr* arg);
+OtpThread PopThreadById(OtpThread* threads, int size, thread_t id);
 void ReadFromClient(int socket_fd, void* buffer, size_t len, int flags);
 void WriteToClient(int socket_fd, void* buffer, size_t len, int flags);
 int ToPositiveInt(const char* str);
@@ -101,6 +115,10 @@ int main(int argc, char** argv) {
     // flip the socket on and start listening
     listen(socket_fd, MAX_LISTEN_CONNECTIONS);
 
+    // contain both thread IDs and thread args in a single var
+    OtpThread threads[MAX_THREADS];
+    int num_threads = 0;
+
     // listen for client's connection forever
     while (1) {
         // accept a connection, blocking if one is not available until one connects
@@ -145,15 +163,32 @@ int main(int argc, char** argv) {
         /* fclose(tmpf); */
 
         // TODO: Multithread the encryption process
+        // initialize the ciphertext string
         char ciphertext[MAX_BUFFER_SIZE];
         memset(ciphertext, '\0', sizeof(ciphertext));
-        EncryptOtp(ciphertext, plaintext, key);
 
-        // first tell client how much data is going to be sent
-        size_t ciphertext_len = strlen(ciphertext);
-        WriteToClient(connection_fd, &ciphertext_len, sizeof(ciphertext_len), 0);
-        // then send the ciphertext to the client
-        WriteToClient(connection_fd, ciphertext, strlen(ciphertext), 0);
+        // set up arguments to be passed into the encryption thread
+        OtpCharArr thread_arg;
+        thread_arg.plaintext = plaintext;
+        thread_arg.key = key;
+        thread_arg.ciphertext = ciphertext;
+        PushThreadArgs(threads, num_threads, &thread_arg);
+
+        // creates a new thread specifically used for encryption
+        // and ensure successful creation
+        assert(pthread_create(&threads[num_threads - 1].id, NULL, EncryptThreadMain,
+                              (void*)&threads[num_threads - 1].args) == 0);
+
+        // block until the encryption thread completes
+        for (int i = 0; i < num_threads; i++) {
+            assert(pthread_join(threads[i].id, NULL) == 0);
+        }
+
+        /* // first tell client how much data is going to be sent */
+        /* size_t ciphertext_len = strlen(ciphertext); */
+        /* WriteToClient(connection_fd, &ciphertext_len, sizeof(ciphertext_len), 0); */
+        /* // then send the ciphertext to the client */
+        /* WriteToClient(connection_fd, ciphertext, strlen(ciphertext), 0); */
 
         // close the existing socket which is connected to client
         close(connection_fd);
@@ -163,6 +198,30 @@ int main(int argc, char** argv) {
     close(socket_fd);
 
     return 0;
+}
+
+// This is the starting function (i.e. the "main") of a thread used specifically
+// for encryption. The true main should only handle the connections, and this
+// thread should handle the encryption process.
+void* EncryptThreadMain(void* argument) {
+    // argument  is passed in as a  void*  pointer to an  OtpCharArr  struct
+    // so cast  argument  to  OtpCharArr*  pointer
+    OtpCharArr* arg = (OtpCharArr*)argument;
+
+    /* printf("%s: EncryptThreadMain(): Before encryption:\n", prog); */
+    /* printf("%s: Plaintext = \"%s\", Size = %zu\n", prog, arg->plaintext, strlen(arg->plaintext)); */
+    /* printf("%s: Key = \"%s\", Size = %zu\n", prog, arg->key, strlen(arg->key)); */
+    /* printf("%s: Ciphertext = \"%s\", Size = %zu\n", prog, arg->ciphertext, strlen(arg->ciphertext)); */
+
+    // let this thread do the actual encryption work
+    EncryptOtp(arg->ciphertext, arg->plaintext, arg->key);
+
+    /* printf("%s: EncryptThreadMain(): After encryption:\n", prog); */
+    /* printf("%s: Plaintext = \"%s\", Size = %zu\n", prog, arg->plaintext, strlen(arg->plaintext)); */
+    /* printf("%s: Key = \"%s\", Size = %zu\n", prog, arg->key, strlen(arg->key)); */
+    /* printf("%s: Ciphertext = \"%s\", Size = %zu\n", prog, arg->ciphertext, strlen(arg->ciphertext)); */
+
+    return NULL;
 }
 
 // Creates a one-time pad by encrypting a given plaintext using a provided key
@@ -195,6 +254,38 @@ void EncryptOtp(char* ciphertext, const char* plaintext, const char* key) {
 
         ciphertext[i] = CHAR_POOL[cipher_idx];
     }
+}
+
+void PushThreadArgs(OtpThread* threads, int size, OtpCharArr* arg) {
+    assert(threads && arg);
+
+    // do nothing if the maximum limit of threads has been reached
+    if (size == MAX_THREADS) return;
+
+    // otherwise, push the arg to the thread array
+    /* threads[size].args.plaintext = arg->plaintext; */
+    /* threads[size].args.key = arg->key; */
+    /* threads[size].args.ciphertext = arg->ciphertext; */
+    threads[size].args = *arg;
+    size++;
+}
+
+OtpThread* PopThreadById(OtpThread* threads, int size, thread_t id) {
+    assert(threads);
+
+    // find the thread ID in the thread array
+    for (int i = 0; i < size; i++)
+        // if matched, remove that thread from array and return it
+        if (pthread_equal(threads[i].id, id)) {
+            OtpThread tmp = threads[i];
+            threads[i] = threads[size - 1];
+            threads[size - 1] = tmp;
+            size--;
+            return &threads[size];
+        }
+
+    // if no match, return NULL
+    return NULL;
 }
 
 // Reads data from client to a buffer with the provided socket and flags.

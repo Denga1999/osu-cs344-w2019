@@ -128,16 +128,16 @@ int main(int argc, char** argv) {
     // then send the combined string to server
     WriteToServer(socket_fd, client_data, client_data_len, 0);
 
-    // first read from server how much data is going to be sent
-    size_t server_data_len = 0;
-    ReadFromServer(socket_fd, &server_data_len, sizeof(server_data_len), 0);
-    // then read ciphertext from server
-    char ciphertext[server_data_len + 1];  // +1 for \0
-    memset(ciphertext, '\0', sizeof(ciphertext));
-    ReadFromServer(socket_fd, ciphertext, server_data_len, 0);
-
-    // print the ciphertext to stdout
-    printf("%s\n", ciphertext);
+    /* // first read from server how much data is going to be sent */
+    /* size_t server_data_len = 0; */
+    /* ReadFromServer(socket_fd, &server_data_len, sizeof(server_data_len), 0); */
+    /* // then read ciphertext from server */
+    /* char ciphertext[server_data_len + 1];  // +1 for \0 */
+    /* memset(ciphertext, '\0', sizeof(ciphertext)); */
+    /* ReadFromServer(socket_fd, ciphertext, server_data_len, 0); */
+    /*  */
+    /* // print the ciphertext to stdout */
+    /* printf("%s\n", ciphertext); */
 
     // clean up
     close(socket_fd);
