@@ -1,6 +1,0 @@
-#!/bin/bash
-
-echo -e "$"
-
-str='1 2 3 4 5'
-echo -e "{str[@]}"
