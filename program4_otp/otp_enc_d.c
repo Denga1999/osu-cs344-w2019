@@ -32,7 +32,9 @@
 //   All error text is output to  stderr , if any.
 
 #include <sys/types.h>
+#include <sys/time.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,32 +43,19 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <assert.h>
-#include <pthread.h>
 
 #define MAX_BUFFER_SIZE (size_t)100000
-#define MAX_LISTEN_CONNECTIONS (int)5
-#define MAX_THREADS (int)5
+#define MAX_LISTENS (int)5
+#define MAX_CONNECTIONS (int)5
+#define TIMEOUT_SECS (time_t)5
+#define TIMEOUT_USECS (suseconds_t)0
 #define CHAR_RANGE (int)27  // 26 capital alphabet letters + 1 space
-
-typedef struct OtpCharArr {
-    char* plaintext;
-    char* key;
-    char* ciphertext;
-} OtpCharArr;
-
-typedef struct OtpThread {
-    thread_t id;
-    OtpCharArr args;
-} OtpThread;
 
 static const char* CHAR_POOL = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
 
 static char* prog;  // executable's name, for convenience
 
-void* EncryptThreadMain(void* argument);
 void EncryptOtp(char* ciphertext, const char* plaintext, const char* key);
-void PushThreadArgs(OtpThread* threads, int size, OtpCharArr* arg);
-OtpThread PopThreadById(OtpThread* threads, int size, thread_t id);
 void ReadFromClient(int socket_fd, void* buffer, size_t len, int flags);
 void WriteToClient(int socket_fd, void* buffer, size_t len, int flags);
 int ToPositiveInt(const char* str);
@@ -96,132 +85,118 @@ int main(int argc, char** argv) {
 
     // set up the socket and ensure successful setup
     // general-purpose socket, use TCP, normal behavior
-    int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (socket_fd < 0) {
+    int listening_socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (listening_socket_fd < 0) {
         fprintf(stderr, "%s: socket() error: Could not open socket\n", prog);
         return 1;
     }
 
     // enable socket to begin listening
-    if (bind(socket_fd,
+    if (bind(listening_socket_fd,
              (struct sockaddr*)&server_address,
              sizeof(server_address)) < 0) {
         fprintf(stderr, "%s: bind() error: Could not bind to port %d\n",
                 prog, port);
-        close(socket_fd);
+        close(listening_socket_fd);
         return 1;
     }
 
     // flip the socket on and start listening
-    listen(socket_fd, MAX_LISTEN_CONNECTIONS);
+    listen(listening_socket_fd, MAX_LISTENS);
 
-    // contain both thread IDs and thread args in a single var
-    OtpThread threads[MAX_THREADS];
-    int num_threads = 0;
+    // sets for FDs to watch
+    fd_set readfds, writefds;
+    // set timeout interval
+    struct timeval timeout;
+    timeout.tv_sec = TIMEOUT_SECS;
+    timeout.tv_usec = TIMEOUT_USECS;
 
     // listen for client's connection forever
     while (1) {
         // accept a connection, blocking if one is not available until one connects
         struct sockaddr_in client_address;
         socklen_t client_info_size = sizeof(client_address);
-        int connection_fd = accept(socket_fd, (struct sockaddr*)&client_address,
+        int connection_fd = accept(listening_socket_fd,
+                                   (struct sockaddr*)&client_address,
                                    &client_info_size);
         if (connection_fd < 0)
             fprintf(stderr, "%s: accept() error\n", prog);
 
-        /* printf("%s: Server connected to client at port %d\n", prog, */
-        /*        ntohs(client_address.sin_port)); */
+        /* printf("%s: connection_fd = %d\n", prog, connection_fd); */
 
-        // first read from client (i.e. otp_enc) how much data is going to be sent
-        size_t client_data_len = 0;
-        ReadFromClient(connection_fd, &client_data_len, sizeof(client_data_len), 0);
-        // then read "KEY\nPLAINTEXT" combination from client
-        char client_data[client_data_len + 1];  // +1 for \0
-        memset(client_data, '\0', sizeof(client_data));
-        ReadFromClient(connection_fd, client_data, client_data_len, 0);
+        FD_ZERO(&readfds);
+        FD_SET(connection_fd, &readfds);
+        FD_ZERO(&writefds);
+        FD_SET(connection_fd, &writefds);
 
-        /* printf("%s: client_data = \"%s\", size = %zu\n", */
-        /*        prog, client_data, strlen(client_data)); */
+        // check to see whether any connection FDs have data
+        int status1 = select(connection_fd + 1, &readfds, NULL, NULL, &timeout);
+        if (status1 == -1) {
+            fprintf(stderr, "%s: select() error\n", prog);
+        } else if (status1) {
+            /* printf("%s: readfds ready!\n", prog); */
 
-        // get plaintext
-        char plaintext[MAX_BUFFER_SIZE];
-        memset(plaintext, '\0', sizeof(plaintext));
-        char* tmp = strtok(client_data, "\n");
-        if (tmp) strcpy(plaintext, tmp);
+            // first read from client (i.e. otp_enc) how much data is going to be sent
+            size_t client_data_len = 0;
+            ReadFromClient(connection_fd, &client_data_len, sizeof(client_data_len), 0);
+            // then read "KEY\nPLAINTEXT" combination from client
+            char client_data[client_data_len + 1];  // +1 for \0
+            memset(client_data, '\0', sizeof(client_data));
+            ReadFromClient(connection_fd, client_data, client_data_len, 0);
 
-        // get key
-        char key[MAX_BUFFER_SIZE];
-        memset(key, '\0', sizeof(key));
-        tmp = strtok(NULL, "\n");
-        if (tmp) strcpy(key, tmp);
+            /* printf("%s: client_data = \"%s\", size = %zu\n", */
+            /*        prog, client_data, strlen(client_data)); */
 
-        /* FILE* tmpf = fopen("test_plaintext_otp_enc_d", "w"); */
-        /* fprintf(tmpf, "%s\n", plaintext); */
-        /* fclose(tmpf); */
-        /* tmpf = fopen("test_key_otp_enc_d", "w"); */
-        /* fprintf(tmpf, "%s\n", key); */
-        /* fclose(tmpf); */
+            // get plaintext
+            char plaintext[MAX_BUFFER_SIZE];
+            memset(plaintext, '\0', sizeof(plaintext));
+            char* tmp = strtok(client_data, "\n");
+            if (tmp) strcpy(plaintext, tmp);
 
-        // TODO: Multithread the encryption process
-        // initialize the ciphertext string
-        char ciphertext[MAX_BUFFER_SIZE];
-        memset(ciphertext, '\0', sizeof(ciphertext));
+            // get key
+            char key[MAX_BUFFER_SIZE];
+            memset(key, '\0', sizeof(key));
+            tmp = strtok(NULL, "\n");
+            if (tmp) strcpy(key, tmp);
 
-        // set up arguments to be passed into the encryption thread
-        OtpCharArr thread_arg;
-        thread_arg.plaintext = plaintext;
-        thread_arg.key = key;
-        thread_arg.ciphertext = ciphertext;
-        PushThreadArgs(threads, num_threads, &thread_arg);
+            /* FILE* tmpf = fopen("test_plaintext_otp_enc_d", "w"); */
+            /* fprintf(tmpf, "%s\n", plaintext); */
+            /* fclose(tmpf); */
+            /* tmpf = fopen("test_key_otp_enc_d", "w"); */
+            /* fprintf(tmpf, "%s\n", key); */
+            /* fclose(tmpf); */
 
-        // creates a new thread specifically used for encryption
-        // and ensure successful creation
-        assert(pthread_create(&threads[num_threads - 1].id, NULL, EncryptThreadMain,
-                              (void*)&threads[num_threads - 1].args) == 0);
+            // initialize the ciphertext string
+            char ciphertext[MAX_BUFFER_SIZE];
+            memset(ciphertext, '\0', sizeof(ciphertext));
+            EncryptOtp(ciphertext, plaintext, key);
 
-        // block until the encryption thread completes
-        for (int i = 0; i < num_threads; i++) {
-            assert(pthread_join(threads[i].id, NULL) == 0);
+            int status2 = select(connection_fd + 1, NULL, &writefds, NULL, &timeout);
+            if (status2 == -1) {
+                fprintf(stderr, "%s: select() error\n", prog);
+            } else if (status2) {
+                /* printf("%s: writefds ready!\n", prog); */
+
+                // first tell client how much data is going to be sent
+                size_t ciphertext_len = strlen(ciphertext);
+                WriteToClient(connection_fd, &ciphertext_len, sizeof(ciphertext_len), 0);
+                // then send the ciphertext to the client
+                WriteToClient(connection_fd, ciphertext, strlen(ciphertext), 0);
+            } else {
+                /* printf("%s: writefds waiting...\n", prog); */
+            }
+        } else {
+            /* printf("%s: readfds waiting...\n", prog); */
         }
-
-        /* // first tell client how much data is going to be sent */
-        /* size_t ciphertext_len = strlen(ciphertext); */
-        /* WriteToClient(connection_fd, &ciphertext_len, sizeof(ciphertext_len), 0); */
-        /* // then send the ciphertext to the client */
-        /* WriteToClient(connection_fd, ciphertext, strlen(ciphertext), 0); */
 
         // close the existing socket which is connected to client
         close(connection_fd);
     }
 
     // close the listening socket
-    close(socket_fd);
+    close(listening_socket_fd);
 
     return 0;
-}
-
-// This is the starting function (i.e. the "main") of a thread used specifically
-// for encryption. The true main should only handle the connections, and this
-// thread should handle the encryption process.
-void* EncryptThreadMain(void* argument) {
-    // argument  is passed in as a  void*  pointer to an  OtpCharArr  struct
-    // so cast  argument  to  OtpCharArr*  pointer
-    OtpCharArr* arg = (OtpCharArr*)argument;
-
-    /* printf("%s: EncryptThreadMain(): Before encryption:\n", prog); */
-    /* printf("%s: Plaintext = \"%s\", Size = %zu\n", prog, arg->plaintext, strlen(arg->plaintext)); */
-    /* printf("%s: Key = \"%s\", Size = %zu\n", prog, arg->key, strlen(arg->key)); */
-    /* printf("%s: Ciphertext = \"%s\", Size = %zu\n", prog, arg->ciphertext, strlen(arg->ciphertext)); */
-
-    // let this thread do the actual encryption work
-    EncryptOtp(arg->ciphertext, arg->plaintext, arg->key);
-
-    /* printf("%s: EncryptThreadMain(): After encryption:\n", prog); */
-    /* printf("%s: Plaintext = \"%s\", Size = %zu\n", prog, arg->plaintext, strlen(arg->plaintext)); */
-    /* printf("%s: Key = \"%s\", Size = %zu\n", prog, arg->key, strlen(arg->key)); */
-    /* printf("%s: Ciphertext = \"%s\", Size = %zu\n", prog, arg->ciphertext, strlen(arg->ciphertext)); */
-
-    return NULL;
 }
 
 // Creates a one-time pad by encrypting a given plaintext using a provided key
@@ -254,38 +229,6 @@ void EncryptOtp(char* ciphertext, const char* plaintext, const char* key) {
 
         ciphertext[i] = CHAR_POOL[cipher_idx];
     }
-}
-
-void PushThreadArgs(OtpThread* threads, int size, OtpCharArr* arg) {
-    assert(threads && arg);
-
-    // do nothing if the maximum limit of threads has been reached
-    if (size == MAX_THREADS) return;
-
-    // otherwise, push the arg to the thread array
-    /* threads[size].args.plaintext = arg->plaintext; */
-    /* threads[size].args.key = arg->key; */
-    /* threads[size].args.ciphertext = arg->ciphertext; */
-    threads[size].args = *arg;
-    size++;
-}
-
-OtpThread* PopThreadById(OtpThread* threads, int size, thread_t id) {
-    assert(threads);
-
-    // find the thread ID in the thread array
-    for (int i = 0; i < size; i++)
-        // if matched, remove that thread from array and return it
-        if (pthread_equal(threads[i].id, id)) {
-            OtpThread tmp = threads[i];
-            threads[i] = threads[size - 1];
-            threads[size - 1] = tmp;
-            size--;
-            return &threads[size];
-        }
-
-    // if no match, return NULL
-    return NULL;
 }
 
 // Reads data from client to a buffer with the provided socket and flags.
