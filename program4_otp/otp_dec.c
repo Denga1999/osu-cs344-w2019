@@ -126,7 +126,8 @@ int main(int argc, char** argv) {
 
     // print error messages and exit if server rejects connection
     if (!can_connect_server) {
-        fprintf(stderr, "%s: Could not contact  %s_d  on port %d\n", prog, prog, port);
+        fprintf(stderr, "%s: Could not contact  %s_d  on port %d\n",
+                prog, prog, port);
         close(socket_fd);
         return 2;
     }
@@ -245,14 +246,9 @@ void ReadFromServer(int socket_fd, void* buffer, size_t len, int flags) {
 
         total_chars_read += chars_read;
 
-        /* printf("%s: recv(): Read %zu. Total read %zu. Remaining %zu\n", prog, */
-        /*        chars_read, total_chars_read, len - total_chars_read); */
-
-        if (total_chars_read < len) {
+        if (total_chars_read < len)
             // move pointer to after the last read character
             tmp_buffer += chars_read;
-            /* fprintf(stderr, "%s: recv() warning: Not all data was read from socket\n", prog); */
-        }
     }
 }
 
@@ -283,14 +279,9 @@ void WriteToServer(int socket_fd, void* buffer, size_t len, int flags) {
 
         total_chars_written += chars_written;
 
-        /* printf("%s: recv(): Written %zu. Total written %zu. Remaining %zu\n", prog, */
-        /*        chars_written, total_chars_written, len - total_chars_written); */
-
-        if (total_chars_written < len) {
+        if (total_chars_written < len)
             // move pointer to after the last written character
             tmp_buffer += chars_written;
-            /* fprintf(stderr, "%s: send() warning: Not all data was written to socket\n", prog); */
-        }
     }
 }
 

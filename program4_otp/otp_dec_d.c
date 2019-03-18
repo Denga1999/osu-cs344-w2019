@@ -93,8 +93,7 @@ int main(int argc, char** argv) {
     if (bind(listening_socket_fd,
              (struct sockaddr*)&server_address,
              sizeof(server_address)) < 0) {
-        fprintf(stderr, "%s: bind() error: Could not bind to port %d\n",
-                prog, port);
+        fprintf(stderr, "%s: bind() error: Could not bind to port %d\n", prog, port);
         close(listening_socket_fd);
         return 1;
     }
@@ -139,7 +138,7 @@ int main(int argc, char** argv) {
         // otherwise, fork off a child
         pid_t spawnpid = JUNK_VAL;
         spawnpid = fork();
-        if (spawnpid == -1) {
+        if (spawnpid < 0) {
             fprintf(stderr, "%s: fork() error\n", prog);
             close(connection_fd);
             continue;
@@ -163,13 +162,6 @@ int main(int argc, char** argv) {
             char key[key_len + 1];  // + 1 for \0
             memset(key, '\0', sizeof(key));
             ReadFromClient(connection_fd, key, key_len, 0);
-
-            /* FILE* tmpf = fopen("test_ciphertext_otp_dec_d", "w"); */
-            /* fprintf(tmpf, "%s\n", ciphertext); */
-            /* fclose(tmpf); */
-            /* tmpf = fopen("test_key_otp_dec_d", "w"); */
-            /* fprintf(tmpf, "%s\n", key); */
-            /* fclose(tmpf); */
 
             // initialize the plaintext string
             char plaintext[ciphertext_len + 1];  // +1 for \0
@@ -257,14 +249,9 @@ void ReadFromClient(int socket_fd, void* buffer, size_t len, int flags) {
 
         total_chars_read += chars_read;
 
-        /* printf("%s: recv(): Read %zu. Total read %zu. Remaining %zu\n", prog, */
-        /*        chars_read, total_chars_read, len - total_chars_read); */
-
-        if (total_chars_read < len) {
+        if (total_chars_read < len)
             // move pointer to after the last read character
             tmp_buffer += chars_read;
-            /* fprintf(stderr, "%s: recv() warning: Not all data was read from socket\n", prog); */
-        }
     }
 }
 
@@ -295,14 +282,9 @@ void WriteToClient(int socket_fd, void* buffer, size_t len, int flags) {
 
         total_chars_written += chars_written;
 
-        /* printf("%s: recv(): Written %zu. Total written %zu. Remaining %zu\n", prog, */
-        /*        chars_written, total_chars_written, len - total_chars_written); */
-
-        if (total_chars_written < len) {
+        if (total_chars_written < len)
             // move pointer to after the last written character
             tmp_buffer += chars_written;
-            /* fprintf(stderr, "%s: send() warning: Not all data was written to socket\n", prog); */
-        }
     }
 }
 

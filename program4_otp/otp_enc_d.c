@@ -180,13 +180,6 @@ int main(int argc, char** argv) {
             memset(key, '\0', sizeof(key));
             ReadFromClient(connection_fd, key, key_len, 0);
 
-            /* FILE* tmpf = fopen("test_plaintext_otp_enc_d", "w"); */
-            /* fprintf(tmpf, "%s\n", plaintext); */
-            /* fclose(tmpf); */
-            /* tmpf = fopen("test_key_otp_enc_d", "w"); */
-            /* fprintf(tmpf, "%s\n", key); */
-            /* fclose(tmpf); */
-
             // initialize ciphertext string
             char ciphertext[plaintext_len + 1];  // +1 for \0
             memset(ciphertext, '\0', sizeof(ciphertext));
@@ -268,14 +261,9 @@ void ReadFromClient(int socket_fd, void* buffer, size_t len, int flags) {
 
         total_chars_read += chars_read;
 
-        /* printf("%s: recv(): Read %zu. Total read %zu. Remaining %zu\n", prog, */
-        /*        chars_read, total_chars_read, len - total_chars_read); */
-
-        if (total_chars_read < len) {
+        if (total_chars_read < len)
             // move pointer to after the last read character
             tmp_buffer += chars_read;
-            /* fprintf(stderr, "%s: recv() warning: Not all data was read from socket\n", prog); */
-        }
     }
 }
 
@@ -306,14 +294,9 @@ void WriteToClient(int socket_fd, void* buffer, size_t len, int flags) {
 
         total_chars_written += chars_written;
 
-        /* printf("%s: recv(): Written %zu. Total written %zu. Remaining %zu\n", prog, */
-        /*        chars_written, total_chars_written, len - total_chars_written); */
-
-        if (total_chars_written < len) {
+        if (total_chars_written < len)
             // move pointer to after the last written character
             tmp_buffer += chars_written;
-            /* fprintf(stderr, "%s: send() warning: Not all data was written to socket\n", prog); */
-        }
     }
 }
 
