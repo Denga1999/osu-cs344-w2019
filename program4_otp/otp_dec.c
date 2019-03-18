@@ -38,8 +38,10 @@
 #include <netdb.h>
 #include <assert.h>
 
-#define HOSTNAME        (char*)"localhost"
+#define HOSTNAME (char*)"localhost"
 #define MAX_BUFFER_SIZE (size_t)100000
+#define ENCRYPTOR (unsigned char)0
+#define DECRYPTOR (unsigned char)1
 
 static char* prog;  // executable's name, for convenience
 
@@ -74,7 +76,7 @@ int main(int argc, char** argv) {
 
     // if key is shorter than ciphertext, terminate with code 1
     if (key_len < ciphertext_len) {
-        fprintf(stderr, "%s: Key must not be shorter than ciphertext\n", prog);
+        fprintf(stderr, "%s: Key \"%s\" is too short\n", prog, argv[2]);
         return 1;
     }
 
@@ -104,8 +106,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // TODO: Reject connection to the same port as the encryptor and its daemon
-
     // connect to server and ensure successful connection
     if (connect(socket_fd,
                 (struct sockaddr*)&server_address,
@@ -116,29 +116,41 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // combine ciphertext and key into one string, separated by a newline
-    char client_data[MAX_BUFFER_SIZE * 2 + 1];  // +1 for \n
-    memset(client_data, '\0', sizeof(client_data));
-    strcat(client_data, ciphertext);
-    strcat(client_data, "\n");
-    strcat(client_data, key);
+    // specify the type of OTP (encryptor or decryptor) to server
+    unsigned char otp_type = DECRYPTOR;
+    WriteToServer(socket_fd, &otp_type, sizeof(otp_type), 0);
 
-    /* printf("%s: Sending to server: \"%s\", size = %zu\n", */
-    /*        prog, client_data, strlen(client_data)); */
+    // receive permission/rejection from server
+    unsigned char can_connect_server = 0;
+    ReadFromServer(socket_fd, &can_connect_server, sizeof(can_connect_server), 0);
 
-    // first tell server (i.e otp_dec_d) how much data is going to be sent
-    size_t client_data_len = strlen(client_data);
-    WriteToServer(socket_fd, &client_data_len, sizeof(client_data_len), 0);
-    // then send the combined string to server
-    WriteToServer(socket_fd, client_data, client_data_len, 0);
+    // print error messages and exit if server rejects connection
+    if (!can_connect_server) {
+        fprintf(stderr, "%s: Could not contact  %s_d  on port %d\n", prog, prog, port);
+        close(socket_fd);
+        return 2;
+    }
 
+    // send ciphertext to server
+    // first tell server how much data is going to be sent
+    WriteToServer(socket_fd, &ciphertext_len, sizeof(ciphertext_len), 0);
+    // then send the ciphertext to server
+    WriteToServer(socket_fd, ciphertext, ciphertext_len, 0);
+
+    // send key to server
+    // first tell server how much data is going to be sent
+    WriteToServer(socket_fd, &key_len, sizeof(key_len), 0);
+    // then send the key to server
+    WriteToServer(socket_fd, key, key_len, 0);
+
+    // receive plaintext from server
     // first read from server how much data is going to be sent
-    size_t server_data_len = 0;
-    ReadFromServer(socket_fd, &server_data_len, sizeof(server_data_len), 0);
+    size_t plaintext_len = 0;
+    ReadFromServer(socket_fd, &plaintext_len, sizeof(plaintext_len), 0);
     // then read plaintext from server
-    char plaintext[server_data_len + 1];  // +1 for \0
+    char plaintext[plaintext_len + 1];  // +1 for \0
     memset(plaintext, '\0', sizeof(plaintext));
-    ReadFromServer(socket_fd, plaintext, server_data_len, 0);
+    ReadFromServer(socket_fd, plaintext, plaintext_len, 0);
 
     // print the plaintext to stdout
     printf("%s\n", plaintext);

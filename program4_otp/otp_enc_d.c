@@ -32,9 +32,7 @@
 //   All error text is output to  stderr , if any.
 
 #include <sys/types.h>
-#include <sys/time.h>
 #include <sys/socket.h>
-#include <sys/select.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,8 +45,8 @@
 #define MAX_BUFFER_SIZE (size_t)100000
 #define MAX_LISTENS (int)5
 #define MAX_CONNECTIONS (int)5
-#define TIMEOUT_SECS (time_t)5
-#define TIMEOUT_USECS (suseconds_t)0
+#define ENCRYPTOR (unsigned char)0
+#define DECRYPTOR (unsigned char)1
 #define CHAR_RANGE (int)27  // 26 capital alphabet letters + 1 space
 
 static const char* CHAR_POOL = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
@@ -85,116 +83,96 @@ int main(int argc, char** argv) {
 
     // set up the socket and ensure successful setup
     // general-purpose socket, use TCP, normal behavior
-    int listening_socket_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (listening_socket_fd < 0) {
+    int listen_socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (listen_socket_fd < 0) {
         fprintf(stderr, "%s: socket() error: Could not open socket\n", prog);
         return 1;
     }
 
     // enable socket to begin listening
-    if (bind(listening_socket_fd,
+    if (bind(listen_socket_fd,
              (struct sockaddr*)&server_address,
              sizeof(server_address)) < 0) {
         fprintf(stderr, "%s: bind() error: Could not bind to port %d\n",
                 prog, port);
-        close(listening_socket_fd);
+        close(listen_socket_fd);
         return 1;
     }
 
     // flip the socket on and start listening
-    listen(listening_socket_fd, MAX_LISTENS);
-
-    // sets for FDs to watch
-    fd_set readfds, writefds;
-    // set timeout interval
-    struct timeval timeout;
-    timeout.tv_sec = TIMEOUT_SECS;
-    timeout.tv_usec = TIMEOUT_USECS;
+    listen(listen_socket_fd, MAX_LISTENS);
 
     // listen for client's connection forever
     while (1) {
         // accept a connection, blocking if one is not available until one connects
         struct sockaddr_in client_address;
         socklen_t client_info_size = sizeof(client_address);
-        int connection_fd = accept(listening_socket_fd,
+        int connection_fd = accept(listen_socket_fd,
                                    (struct sockaddr*)&client_address,
                                    &client_info_size);
-        if (connection_fd < 0)
+        if (connection_fd < 0) {
             fprintf(stderr, "%s: accept() error\n", prog);
-
-        /* printf("%s: connection_fd = %d\n", prog, connection_fd); */
-
-        FD_ZERO(&readfds);
-        FD_SET(connection_fd, &readfds);
-        FD_ZERO(&writefds);
-        FD_SET(connection_fd, &writefds);
-
-        // check to see whether any connection FDs have data
-        int status1 = select(connection_fd + 1, &readfds, NULL, NULL, &timeout);
-        if (status1 == -1) {
-            fprintf(stderr, "%s: select() error\n", prog);
-        } else if (status1) {
-            /* printf("%s: readfds ready!\n", prog); */
-
-            // first read from client (i.e. otp_enc) how much data is going to be sent
-            size_t client_data_len = 0;
-            ReadFromClient(connection_fd, &client_data_len, sizeof(client_data_len), 0);
-            // then read "PLAINTEXT\nKEY" combination from client
-            char client_data[client_data_len + 1];  // +1 for \0
-            memset(client_data, '\0', sizeof(client_data));
-            ReadFromClient(connection_fd, client_data, client_data_len, 0);
-
-            /* printf("%s: client_data = \"%s\", size = %zu\n", */
-            /*        prog, client_data, strlen(client_data)); */
-
-            // get plaintext
-            char plaintext[MAX_BUFFER_SIZE];
-            memset(plaintext, '\0', sizeof(plaintext));
-            char* tmp = strtok(client_data, "\n");
-            if (tmp) strcpy(plaintext, tmp);
-
-            // get key
-            char key[MAX_BUFFER_SIZE];
-            memset(key, '\0', sizeof(key));
-            tmp = strtok(NULL, "\n");
-            if (tmp) strcpy(key, tmp);
-
-            /* FILE* tmpf = fopen("test_plaintext_otp_enc_d", "w"); */
-            /* fprintf(tmpf, "%s\n", plaintext); */
-            /* fclose(tmpf); */
-            /* tmpf = fopen("test_key_otp_enc_d", "w"); */
-            /* fprintf(tmpf, "%s\n", key); */
-            /* fclose(tmpf); */
-
-            // initialize the ciphertext string
-            char ciphertext[MAX_BUFFER_SIZE];
-            memset(ciphertext, '\0', sizeof(ciphertext));
-            EncryptOtp(ciphertext, plaintext, key);
-
-            int status2 = select(connection_fd + 1, NULL, &writefds, NULL, &timeout);
-            if (status2 == -1) {
-                fprintf(stderr, "%s: select() error\n", prog);
-            } else if (status2) {
-                /* printf("%s: writefds ready!\n", prog); */
-
-                // first tell client how much data is going to be sent
-                size_t ciphertext_len = strlen(ciphertext);
-                WriteToClient(connection_fd, &ciphertext_len, sizeof(ciphertext_len), 0);
-                // then send the ciphertext to the client
-                WriteToClient(connection_fd, ciphertext, strlen(ciphertext), 0);
-            } else {
-                /* printf("%s: writefds waiting...\n", prog); */
-            }
-        } else {
-            /* printf("%s: readfds waiting...\n", prog); */
+            continue;
         }
+
+        // receive the type of client's OTP (encryptor or decryptor)
+        unsigned char client_otp_type = 0;
+        ReadFromClient(connection_fd, &client_otp_type, sizeof(client_otp_type), 0);
+
+        // check client's OTP type and determine their permission to connect
+        unsigned char client_can_connect = (client_otp_type == ENCRYPTOR);
+        // send client permission/rejection to connect
+        WriteToClient(connection_fd, &client_can_connect, sizeof(client_can_connect), 0);
+
+        // only start sending/receiving data to/from client if they can connect
+        if (!client_can_connect) {
+            close(connection_fd);
+            continue;
+        }
+
+        // receive plaintext from client
+        // first read from client how much data is going to be sent
+        size_t plaintext_len = 0;
+        ReadFromClient(connection_fd, &plaintext_len, sizeof(plaintext_len), 0);
+        // then read plaintext from client
+        char plaintext[plaintext_len + 1];  // +1 for \0
+        memset(plaintext, '\0', sizeof(plaintext));
+        ReadFromClient(connection_fd, plaintext, plaintext_len, 0);
+
+        // receive key from client
+        // first read from client how much data is going to be sent
+        size_t key_len = 0;
+        ReadFromClient(connection_fd, &key_len, sizeof(key_len), 0);
+        // then read key from client
+        char key[key_len + 1];  // + 1 for \0
+        memset(key, '\0', sizeof(key));
+        ReadFromClient(connection_fd, key, key_len, 0);
+
+        /* FILE* tmpf = fopen("test_plaintext_otp_enc_d", "w"); */
+        /* fprintf(tmpf, "%s\n", plaintext); */
+        /* fclose(tmpf); */
+        /* tmpf = fopen("test_key_otp_enc_d", "w"); */
+        /* fprintf(tmpf, "%s\n", key); */
+        /* fclose(tmpf); */
+
+        // initialize ciphertext string
+        char ciphertext[plaintext_len + 1];  // +1 for \0
+        memset(ciphertext, '\0', sizeof(ciphertext));
+        EncryptOtp(ciphertext, plaintext, key);
+
+        // first tell client how much data is going to be sent
+        size_t ciphertext_len = strlen(ciphertext);
+        assert(ciphertext_len == plaintext_len);  // make sure equal length
+        WriteToClient(connection_fd, &ciphertext_len, sizeof(ciphertext_len), 0);
+        // then send ciphertext to client
+        WriteToClient(connection_fd, ciphertext, ciphertext_len, 0);
 
         // close the existing socket which is connected to client
         close(connection_fd);
     }
 
     // close the listening socket
-    close(listening_socket_fd);
+    close(listen_socket_fd);
 
     return 0;
 }
