@@ -33,7 +33,7 @@
 #   ./compileall clean
 
 CC='gcc'
-CFLAGS='-std=c99 -lpthread -g -Wall'
+CFLAGS='-std=c99 -g -Wall'
 
 SRC=''
 for source_file in *.c; do

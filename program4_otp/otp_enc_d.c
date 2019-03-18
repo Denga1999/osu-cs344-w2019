@@ -139,7 +139,7 @@ int main(int argc, char** argv) {
             // first read from client (i.e. otp_enc) how much data is going to be sent
             size_t client_data_len = 0;
             ReadFromClient(connection_fd, &client_data_len, sizeof(client_data_len), 0);
-            // then read "KEY\nPLAINTEXT" combination from client
+            // then read "PLAINTEXT\nKEY" combination from client
             char client_data[client_data_len + 1];  // +1 for \0
             memset(client_data, '\0', sizeof(client_data));
             ReadFromClient(connection_fd, client_data, client_data_len, 0);
