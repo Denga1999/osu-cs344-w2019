@@ -41,25 +41,41 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <assert.h>
+#include <signal.h>
 
 #define MAX_BUFFER_SIZE (size_t)100000
 #define MAX_LISTENS (int)5
-#define MAX_CONNECTIONS (int)5
+#define MAX_CHILDREN (int)5
 #define ENCRYPTOR (unsigned char)0
 #define DECRYPTOR (unsigned char)1
+#define JUNK_VAL (pid_t)-7
 #define CHAR_RANGE (int)27  // 26 capital alphabet letters + 1 space
 
 static const char* CHAR_POOL = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
 
 static char* prog;  // executable's name, for convenience
+static int num_children;  // number of child processes
 
 void EncryptOtp(char* ciphertext, const char* plaintext, const char* key);
 void ReadFromClient(int socket_fd, void* buffer, size_t len, int flags);
 void WriteToClient(int socket_fd, void* buffer, size_t len, int flags);
 int ToPositiveInt(const char* str);
 
+// Catches SIGCHLD (i.e. CHiLD process finished) and update the number of active
+// child process.
+void CatchSIGCHLD(int signo) { num_children--; }
+
 int main(int argc, char** argv) {
+    // register signal handlers
+    struct sigaction SIGCHLD_action = {{0}};    // deal with SIGCHLD
+    SIGCHLD_action.sa_handler = CatchSIGCHLD;   // handler when caught
+    sigfillset(&SIGCHLD_action.sa_mask);        // block all signal types
+    SIGCHLD_action.sa_flags = SA_RESTART;       // restart system calls
+    sigaction(SIGCHLD, &SIGCHLD_action, NULL);  // register the struct
+
+    // init global vars
     prog = argv[0];
+    num_children = 0;
 
     // ensure correct usage of command line arguments
     if (argc != 2) {
@@ -130,42 +146,58 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        // receive plaintext from client
-        // first read from client how much data is going to be sent
-        size_t plaintext_len = 0;
-        ReadFromClient(connection_fd, &plaintext_len, sizeof(plaintext_len), 0);
-        // then read plaintext from client
-        char plaintext[plaintext_len + 1];  // +1 for \0
-        memset(plaintext, '\0', sizeof(plaintext));
-        ReadFromClient(connection_fd, plaintext, plaintext_len, 0);
+        // if maximum connections have been reached, don't create any child
+        if (num_children == MAX_CHILDREN) {
+            close(connection_fd);
+            continue;
+        }
 
-        // receive key from client
-        // first read from client how much data is going to be sent
-        size_t key_len = 0;
-        ReadFromClient(connection_fd, &key_len, sizeof(key_len), 0);
-        // then read key from client
-        char key[key_len + 1];  // + 1 for \0
-        memset(key, '\0', sizeof(key));
-        ReadFromClient(connection_fd, key, key_len, 0);
+        // otherwise, fork off a child
+        pid_t spawnpid = JUNK_VAL;
+        spawnpid = fork();
+        if (spawnpid == -1) {
+            fprintf(stderr, "%s: fork() error\n", prog);
+            close(connection_fd);
+            continue;
+        } else if (spawnpid == 0) {  // child process does the heavy work
+            num_children++;
 
-        /* FILE* tmpf = fopen("test_plaintext_otp_enc_d", "w"); */
-        /* fprintf(tmpf, "%s\n", plaintext); */
-        /* fclose(tmpf); */
-        /* tmpf = fopen("test_key_otp_enc_d", "w"); */
-        /* fprintf(tmpf, "%s\n", key); */
-        /* fclose(tmpf); */
+            // receive plaintext from client
+            // first read from client how much data is going to be sent
+            size_t plaintext_len = 0;
+            ReadFromClient(connection_fd, &plaintext_len, sizeof(plaintext_len), 0);
+            // then read plaintext from client
+            char plaintext[plaintext_len + 1];  // +1 for \0
+            memset(plaintext, '\0', sizeof(plaintext));
+            ReadFromClient(connection_fd, plaintext, plaintext_len, 0);
 
-        // initialize ciphertext string
-        char ciphertext[plaintext_len + 1];  // +1 for \0
-        memset(ciphertext, '\0', sizeof(ciphertext));
-        EncryptOtp(ciphertext, plaintext, key);
+            // receive key from client
+            // first read from client how much data is going to be sent
+            size_t key_len = 0;
+            ReadFromClient(connection_fd, &key_len, sizeof(key_len), 0);
+            // then read key from client
+            char key[key_len + 1];  // + 1 for \0
+            memset(key, '\0', sizeof(key));
+            ReadFromClient(connection_fd, key, key_len, 0);
 
-        // first tell client how much data is going to be sent
-        size_t ciphertext_len = strlen(ciphertext);
-        assert(ciphertext_len == plaintext_len);  // make sure equal length
-        WriteToClient(connection_fd, &ciphertext_len, sizeof(ciphertext_len), 0);
-        // then send ciphertext to client
-        WriteToClient(connection_fd, ciphertext, ciphertext_len, 0);
+            /* FILE* tmpf = fopen("test_plaintext_otp_enc_d", "w"); */
+            /* fprintf(tmpf, "%s\n", plaintext); */
+            /* fclose(tmpf); */
+            /* tmpf = fopen("test_key_otp_enc_d", "w"); */
+            /* fprintf(tmpf, "%s\n", key); */
+            /* fclose(tmpf); */
+
+            // initialize ciphertext string
+            char ciphertext[plaintext_len + 1];  // +1 for \0
+            memset(ciphertext, '\0', sizeof(ciphertext));
+            EncryptOtp(ciphertext, plaintext, key);
+
+            // first tell client how much data is going to be sent
+            size_t ciphertext_len = strlen(ciphertext);
+            WriteToClient(connection_fd, &ciphertext_len, sizeof(ciphertext_len), 0);
+            // then send ciphertext to client
+            WriteToClient(connection_fd, ciphertext, ciphertext_len, 0);
+        }
 
         // close the existing socket which is connected to client
         close(connection_fd);
