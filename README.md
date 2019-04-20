@@ -41,11 +41,13 @@ To use this program, follow these steps:
 1. Compile all 5 programs by running `./compileall`
 2. Run the encryption daemon by executing `./otp_enc_d PORT &`, where `PORT` is a number between 55000 and 65000.
 3. Run the decryption daemon by executing `./otp_dec_d PORT &`, where `PORT` is a number between 55000 and 65000 (must be different from the port that `otp_enc_d` uses).
-4. The two daemons will then be run in the background. Next, generate a key by running `./keygen LENGTH  key_file`, where `LENGTH` is the length of the key and `key_file` is the file to output the resulting key to.
+4. The two daemons will then be run in the background. Next, generate a key by running `./keygen LENGTH key_file`, where `LENGTH` is the length of the key and `key_file` is the file to output the resulting key to.
 5. Try encrypting the information in the `plaintext1` file by running `./otp_enc plaintext1 key_file PORT > ciphertext1`, where `PORT` is the port number assigned to `otp_enc_d` in step 2. The encrypted text will be output to a file named `ciphertext1`. Note that the ciphertext is nothing like the original text (which is good!).
 6. Try decrypting the information in the `ciphertext1` file by running `./otp_dec ciphertext1 key_file PORT > plaintext1_a`, where `PORT` is the port number assigned to `otp_dec_d` in step 3. The decrypted text will be output to a file named `plaintext1_a`. Note that the plaintext is now the same as the original text in the `plaintext1` file.
 7. The OTP will produce a different ciphertext and plaintext if the key file is changed. Try it!
 
 ## Program Py
 
+This program serves as an introduction to programming in Python. This program focuses on files, strings, and integer multiplication.
 
+To run the program, execute `python3 mypython.py`.
