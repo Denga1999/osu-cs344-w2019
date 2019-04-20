@@ -55,6 +55,11 @@ typedef struct DynamicIntArray {
     int capacity;
 } DynIntArr;
 
+/**
+ * Global mutex flag
+ */
+pthread_mutex_t time_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 void* MainTimeThread(void* argument);
 void InitRooms(Room* rooms, int size);
 void GetNewestRoomDir(char* dirname);
@@ -83,6 +88,9 @@ int main(void) {
 
     PlayGame(rooms);
 
+    /* clean up */
+    pthread_mutex_destroy(&time_mutex);
+
     return 0;
 }
 
@@ -90,9 +98,12 @@ int main(void) {
  * This the startup function for the  time_thread  defined globally.
  */
 void* MainTimeThread(void* argument) {
-    char* arg = (char*)argument;
+    pthread_mutex_lock(&time_mutex);
 
+    char* arg = (char*)argument;
     PrintTimeToFile(arg);
+
+    pthread_mutex_unlock(&time_mutex);
 
     return NULL;
 }
@@ -413,7 +424,7 @@ void PlayGame(Room* rooms) {
     printf("YOU TOOK %d STEPS. YOUR PATH TO VICTORY WAS:\n",
            room_idx_path.size - 1);
     int i;
-    for (i = 0; i < room_idx_path.size; i++)
+    for (i = 1; i < room_idx_path.size; i++)
         printf("%s\n", rooms[room_idx_path.values[i]].name);
 
     DeleteDynIntArr(&room_idx_path);
